@@ -4,6 +4,8 @@ __pycache__/
 *$py.class
 *.so
 .Python
+.pytest_cache/
+.ruff_cache/
 *.egg-info/
 dist/
 build/
@@ -20,6 +22,7 @@ env/
 # Generated artifacts
 generated_images/
 outputs/
+batches/
 *.log
 
 # IDE / OS
