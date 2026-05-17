@@ -1,0 +1,39 @@
+{
+  "defaults": {
+    "category": "paper-figures",
+    "style": "paper-figure",
+    "n": 1
+  },
+  "jobs": [
+    {
+      "slug": "audioscan-data-to-spectrogram",
+      "filename_prefix": "audioscan-01-data-to-spectrogram",
+      "prompt": "Focused paper figure, only the data preprocessing path. Show a Parati audio file waveform converted into one log-power spectrogram. Include compact labels: sr 32 kHz, fixed length 454400, STFT, log-power spectrogram, shape 1 x 801 x 1421. Use left-to-right flow with three main blocks: audio, STFT, spectrogram. Do not show the neural network or training stages."
+    },
+    {
+      "slug": "audioscan-encoder-backbone",
+      "filename_prefix": "audioscan-02-encoder-backbone",
+      "prompt": "Focused paper figure, only the PersonalizedEncoder backbone. Show one input spectrogram entering a compact six-block CNN stack, then adaptive average pooling, then a 256-d pooled feature. Use concise block labels: Conv1 1 to 32, Conv2 32 to 64, Conv3 64 to 128, Conv4 128 to 192, Conv5 192 to 224, Conv6 224 to 256, AvgPool, 256-d feature. Do not show projection head, regression head, metrics, or optimizer."
+    },
+    {
+      "slug": "audioscan-projection-head",
+      "filename_prefix": "audioscan-03-projection-head",
+      "prompt": "Focused paper figure, only the contrastive projection head. Show a 256-d pooled feature passing through Linear 256 to 512, Linear 512 to 256, Linear 256 to 128, then L2 normalize to a 128-d embedding. Add a small contrastive-learning cue with anchor, positive, and negative embeddings around the final embedding space. Do not show the CNN layers or regression output."
+    },
+    {
+      "slug": "audioscan-fc-regression-head",
+      "filename_prefix": "audioscan-04-fc-regression-head",
+      "prompt": "Focused paper figure, only the default FC regression head. Show a 256-d pooled backbone feature flowing through Linear 256 to 60, Linear 60 to 50, Linear 50 to 12, then a simple 12-point AudioScan curve. Include compact frequency labels as tick marks: 250, 500, 1K, 2K, 4K, 8K, 12.5K. Do not show pretraining, optimizer, validation, or non-default attention heads."
+    },
+    {
+      "slug": "audioscan-two-stage-training",
+      "filename_prefix": "audioscan-05-two-stage-training",
+      "prompt": "Focused paper figure, only the two-stage training schedule. Use two large horizontal panels: Stage A contrastive encoder pretraining with anchor positive negative spectrograms, projection head, ContrastiveLoss, Adam; Stage B regression training with pretrained encoder, FC regressor, L1Loss, AdamW, best checkpoint by subject_median_curve_mae. Keep each panel visually simple with no detailed layer list."
+    },
+    {
+      "slug": "audioscan-target-aggregation",
+      "filename_prefix": "audioscan-06-target-aggregation",
+      "prompt": "Focused paper figure, only the target construction. Show repeated AudioScan measurements grouped by Subject plus earphone, aggregated by median, producing one stable 12-point absolute target curve. Use four main blocks: raw rows, grouping key, median aggregation, target curve. Do not show audio preprocessing, encoder layers, or training loss."
+    }
+  ]
+}

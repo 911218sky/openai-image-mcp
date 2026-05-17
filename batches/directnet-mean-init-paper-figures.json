@@ -1,0 +1,19 @@
+{
+  "defaults": {
+    "category": "paper-figures",
+    "style": "paper-figure",
+    "n": 1
+  },
+  "jobs": [
+    {
+      "slug": "directnet-no-mean-init-method",
+      "filename_prefix": "directnet-01-no-mean-init-method",
+      "prompt": "Focused conference-paper method figure for DirectNet without output mean initialization. Show a log-power spectrogram input flowing into a RehearFitEncoder six-layer CNN, then FC1 6912 to 60, FC2 60 to 50, FC3 50 to 12 initialized randomly, then a 12-band LTASS dB output curve. Add a small training cue showing weak input augmentation with noise plus frequency mask applied before the encoder. Emphasize that the model must learn both the global LTASS mean curve and sample-specific residuals from limited labeled data. Use concise labels only: spectrogram, noise + mask, RehearFitEncoder, FC head, random FC3, LTASS output, learn mean + residual."
+    },
+    {
+      "slug": "directnet-train-mean-init-method",
+      "filename_prefix": "directnet-02-train-mean-init-method",
+      "prompt": "Focused conference-paper method figure for DirectNet with train-subset mean initialization. Show a log-power spectrogram input flowing into the same RehearFitEncoder six-layer CNN, then FC1 6912 to 60, FC2 60 to 50, FC3 50 to 12. Beside FC3, show a train-subset LTASS mean curve copied into the FC3 bias and FC3 weights set to zero at initialization. Then show the 12-band LTASS dB output curve as mean curve plus learned residual correction. Add the same weak input augmentation cue with noise plus frequency mask before the encoder. Use concise labels only: spectrogram, noise + mask, RehearFitEncoder, FC head, FC3 bias = train mean, weights = 0, residual learning, LTASS output."
+    }
+  ]
+}
