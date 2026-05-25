@@ -17,6 +17,7 @@ from oepnai_image.cli import (
     format_terminal_api_error,
     GenerationOptions,
     generate_job,
+    generate_image_with_curl,
     generate_with_retries,
     ImageJob,
     inspect_png_bytes,
@@ -28,6 +29,7 @@ from oepnai_image.cli import (
     resolve_timeout_seconds,
     resolve_style,
     resolve_size_argument,
+    should_use_curl_transport,
     should_retry_exception,
     slugify,
 )
@@ -221,6 +223,56 @@ def test_should_retry_exception_false_for_403() -> None:
     exc.status_code = 403  # type: ignore[attr-defined]
 
     assert should_retry_exception(exc) is False
+
+
+def test_should_use_curl_transport_for_non_openai_base_url() -> None:
+    env = {
+        "api_key": "test-key",
+        "base_url": "https://xidaoapi.com/v1",
+        "image_model": "gpt-image-2",
+        "image_transport": "auto",
+        "timeout": "180",
+    }
+
+    assert should_use_curl_transport(env) is True
+
+
+def test_generate_image_with_curl_returns_namespace(monkeypatch: pytest.MonkeyPatch) -> None:
+    response_body = {
+        "data": [
+            {
+                "b64_json": base64.b64encode(b"png-bytes").decode("ascii"),
+            }
+        ]
+    }
+
+    class FakeCompletedProcess:
+        returncode = 0
+        stdout = json.dumps(response_body).encode("utf-8")
+        stderr = b""
+
+    captured = {}
+
+    def fake_run(command: list[str], **_: object) -> FakeCompletedProcess:
+        captured["command"] = command
+        return FakeCompletedProcess()
+
+    monkeypatch.setattr("oepnai_image.cli.subprocess.run", fake_run)
+
+    result = generate_image_with_curl(
+        {
+            "api_key": "test-key",
+            "base_url": "https://xidaoapi.com/v1",
+            "image_model": "gpt-image-2",
+            "image_transport": "curl",
+            "timeout": "180",
+        },
+        {"model": "gpt-image-2", "prompt": "test"},
+        timeout_seconds=3,
+    )
+
+    assert result.data[0].b64_json == response_body["data"][0]["b64_json"]
+    assert "https://xidaoapi.com/v1/images/generations" in captured["command"]
 
 
 def test_generate_with_retries_does_not_retry_non_retryable_status() -> None:

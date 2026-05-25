@@ -5,6 +5,7 @@ import base64
 import json
 import os
 import re
+import subprocess
 import time
 import sys
 import urllib.request
@@ -13,6 +14,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from dotenv import load_dotenv
@@ -260,11 +262,13 @@ def read_env() -> dict[str, str]:
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").strip()
     image_model = os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-1").strip()
+    image_transport = os.getenv("OPENAI_IMAGE_TRANSPORT", "auto").strip().lower()
     timeout = os.getenv("OPENAI_TIMEOUT_SECONDS", str(DEFAULT_TIMEOUT_SECONDS)).strip()
     return {
         "api_key": api_key,
         "base_url": base_url,
         "image_model": image_model,
+        "image_transport": image_transport,
         "timeout": timeout,
     }
 
@@ -291,6 +295,18 @@ def build_client(env: dict[str, str], timeout_seconds: float | None = None) -> O
         timeout=timeout,
         max_retries=0,
     )
+
+
+def should_use_curl_transport(env: dict[str, str]) -> bool:
+    transport = env.get("image_transport", "auto")
+    if transport not in {"auto", "sdk", "curl"}:
+        raise RuntimeError("OPENAI_IMAGE_TRANSPORT must be one of: auto, sdk, curl.")
+    if transport == "curl":
+        return True
+    if transport == "sdk":
+        return False
+    base_url = env["base_url"].lower()
+    return "api.openai.com" not in base_url
 
 
 def should_retry_exception(exc: Exception) -> bool:
@@ -322,6 +338,57 @@ def response_item_to_png_bytes(item: Any, timeout_seconds: float) -> bytes:
             return response.read()
 
     raise RuntimeError("Image response did not contain b64_json or url data.")
+
+
+def image_generation_endpoint(base_url: str) -> str:
+    return f"{base_url.rstrip('/')}/images/generations"
+
+
+def generate_image_with_curl(
+    env: dict[str, str],
+    payload: dict[str, Any],
+    *,
+    timeout_seconds: float,
+) -> Any:
+    if not env["api_key"]:
+        raise RuntimeError("OPENAI_API_KEY is missing. Fill oepnai_image/.env before running.")
+
+    command = [
+        "curl",
+        "-sS",
+        "--max-time",
+        f"{timeout_seconds:g}",
+        image_generation_endpoint(env["base_url"]),
+        "-H",
+        "Content-Type: application/json",
+        "-H",
+        f"Authorization: Bearer {env['api_key']}",
+        "-d",
+        json.dumps(payload),
+    ]
+    result = subprocess.run(command, check=False, capture_output=True)
+    stdout = result.stdout.decode("utf-8", errors="replace")
+    stderr = result.stderr.decode("utf-8", errors="replace").strip()
+
+    if result.returncode != 0:
+        detail = stderr or stdout or f"curl exited with status {result.returncode}"
+        raise RuntimeError(detail)
+
+    try:
+        response = json.loads(stdout)
+    except json.JSONDecodeError as exc:
+        snippet = stdout[:1000] if stdout else stderr
+        raise RuntimeError(f"Image generation returned non-JSON response: {snippet}") from exc
+
+    if "error" in response:
+        error = response["error"]
+        if isinstance(error, dict):
+            message = error.get("message") or json.dumps(error, ensure_ascii=False)
+        else:
+            message = str(error)
+        raise RuntimeError(message)
+
+    return json.loads(json.dumps(response), object_hook=lambda data: SimpleNamespace(**data))
 
 
 def inspect_png_bytes(image_bytes: bytes) -> dict[str, Any]:
@@ -506,16 +573,33 @@ def generate_job(
             "dry_run": True,
         }
 
-    if client is None:
-        client = build_client(env, timeout_seconds=options.timeout_seconds)
+    if should_use_curl_transport(env):
+        response = generate_with_retries(
+            SimpleNamespace(
+                images=SimpleNamespace(
+                    generate=lambda **request_payload: generate_image_with_curl(
+                        env,
+                        request_payload,
+                        timeout_seconds=options.timeout_seconds,
+                    )
+                )
+            ),
+            payload,
+            job_slug=job.slug,
+            max_retries=options.max_retries,
+            retry_delay_seconds=options.retry_delay_seconds,
+        )
+    else:
+        if client is None:
+            client = build_client(env, timeout_seconds=options.timeout_seconds)
 
-    response = generate_with_retries(
-        client,
-        payload,
-        job_slug=job.slug,
-        max_retries=options.max_retries,
-        retry_delay_seconds=options.retry_delay_seconds,
-    )
+        response = generate_with_retries(
+            client,
+            payload,
+            job_slug=job.slug,
+            max_retries=options.max_retries,
+            retry_delay_seconds=options.retry_delay_seconds,
+        )
     print(f"[received] {job.slug} API response in {time.monotonic() - started_at:.1f}s", flush=True)
     if not getattr(response, "data", None):
         raise RuntimeError(f"Image generation returned no image data for {job.slug}.")
