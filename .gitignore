@@ -32,3 +32,6 @@ batches/
 *.swo
 .DS_Store
 Thumbs.db
+
+# Local code index
+.codegraph/
