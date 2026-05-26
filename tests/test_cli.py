@@ -348,7 +348,7 @@ def test_response_item_to_png_bytes_passes_timeout_to_urlopen(monkeypatch: pytes
 
 
 def test_resolve_timeout_seconds_uses_default_for_empty_value() -> None:
-    assert resolve_timeout_seconds("") == 180.0
+    assert resolve_timeout_seconds("") == 1200.0
 
 
 def test_resolve_timeout_seconds_rejects_non_positive_value() -> None:
@@ -513,7 +513,7 @@ def test_generate_job_writes_api_png_without_reencoding(tmp_path: Path) -> None:
     )
     client = SimpleNamespace(images=SimpleNamespace(generate=lambda **_: response))
     options = GenerationOptions(
-        size_override="160x90",
+        size_override="160x96",
         quality_override=None,
         model_override=None,
         background_override=None,
@@ -535,7 +535,7 @@ def test_generate_job_writes_api_png_without_reencoding(tmp_path: Path) -> None:
 
     output_path = tmp_path / "sample.png"
     assert output_path.read_bytes() == original_bytes
-    assert result["images"][0]["requested_size"] == "160x90"
+    assert result["images"][0]["requested_size"] == "160x96"
     assert result["images"][0]["original_size"] == "16x9"
     assert result["images"][0]["final_size"] == "16x9"
     assert result["images"][0]["resized"] is False

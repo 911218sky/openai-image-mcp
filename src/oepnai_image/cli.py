@@ -26,8 +26,9 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OUTPUT_ROOT = PACKAGE_ROOT / "generated_images"
 DEFAULT_STYLE_DIR = PACKAGE_ROOT / "prompt_styles"
 DEFAULT_MAX_RETRIES = 5
-DEFAULT_TIMEOUT_SECONDS = 180.0
+DEFAULT_TIMEOUT_SECONDS = 1200.0
 NON_RETRYABLE_STATUS_CODES = {400, 401, 403, 404}
+SIZE_DIVISIBILITY = 16
 
 
 def slugify(value: str) -> str:
@@ -66,6 +67,7 @@ def parse_resolution(value: str) -> tuple[int, int]:
     height = int(match.group(2))
     if width < 1 or height < 1:
         raise RuntimeError("Resolution width and height must be positive integers.")
+    validate_size_dimensions(width, height)
     return width, height
 
 
@@ -82,6 +84,17 @@ def parse_aspect_ratio(value: str) -> tuple[int, int]:
 
 def round_dimension(value: float) -> int:
     return max(1, int(round(value)))
+
+
+def round_to_multiple(value: int, divisor: int) -> int:
+    return max(divisor, int(round(value / divisor)) * divisor)
+
+
+def validate_size_dimensions(width: int, height: int) -> None:
+    if width % SIZE_DIVISIBILITY != 0 or height % SIZE_DIVISIBILITY != 0:
+        raise RuntimeError(
+            f"Invalid size '{width}x{height}'. Width and height must both be divisible by {SIZE_DIVISIBILITY}."
+        )
 
 
 def build_size_from_ratio(
@@ -111,6 +124,9 @@ def build_size_from_ratio(
             width = short_edge or 1024
             height = round_dimension(width * height_ratio / width_ratio)
 
+    width = round_to_multiple(width, SIZE_DIVISIBILITY)
+    height = round_to_multiple(height, SIZE_DIVISIBILITY)
+    validate_size_dimensions(width, height)
     return f"{width}x{height}"
 
 
@@ -127,6 +143,7 @@ def resolve_size_argument(args: argparse.Namespace) -> str | None:
             raise RuntimeError("Use --width and --height together.")
         if args.width < 1 or args.height < 1:
             raise RuntimeError("--width and --height must be at least 1.")
+        validate_size_dimensions(args.width, args.height)
         return f"{args.width}x{args.height}"
     if explicit_sizes:
         width, height = parse_resolution(explicit_sizes[0])
@@ -202,6 +219,16 @@ class GenerationOptions:
     dry_run: bool
 
 
+@dataclass(frozen=True)
+class ResolvedJobConfig:
+    category: str
+    model: str
+    background: str
+    num_images: int
+    size: str | None
+    quality: str | None
+
+
 def load_style_file(path: Path) -> PromptStyle:
     data = load_json(path)
     slug = slugify(str(data.get("slug") or path.stem))
@@ -235,6 +262,19 @@ def format_style_listing(styles: dict[str, PromptStyle]) -> str:
         description = style.description or "No description."
         lines.append(f"- {slug}: {description}")
     return "\n".join(lines)
+
+
+def validate_main_args(args: argparse.Namespace) -> None:
+    if args.num_images < 1:
+        raise RuntimeError("--num-images must be at least 1.")
+    if args.workers < 1:
+        raise RuntimeError("--workers must be at least 1.")
+    if args.max_retries < 1:
+        raise RuntimeError("--max-retries must be at least 1.")
+    if args.max_retries > DEFAULT_MAX_RETRIES:
+        raise RuntimeError(f"--max-retries cannot be greater than {DEFAULT_MAX_RETRIES}.")
+    if args.retry_delay < 0:
+        raise RuntimeError("--retry-delay must be 0 or greater.")
 
 
 def resolve_style(style_name: str | None, styles: dict[str, PromptStyle]) -> PromptStyle | None:
@@ -305,7 +345,7 @@ def should_use_curl_transport(env: dict[str, str]) -> bool:
         return True
     if transport == "sdk":
         return False
-    base_url = env["base_url"].lower()
+    base_url = env.get("base_url", "https://api.openai.com/v1").lower()
     return "api.openai.com" not in base_url
 
 
@@ -514,6 +554,79 @@ def collect_jobs(args: argparse.Namespace) -> tuple[list[ImageJob], str]:
     return jobs, ", ".join(sources) or "unknown"
 
 
+def filter_jobs(
+    jobs: list[ImageJob],
+    *,
+    only: list[str] | None,
+    limit: int | None,
+) -> list[ImageJob]:
+    selected_slugs = {slugify(item) for item in only or []}
+    if selected_slugs:
+        jobs = [job for job in jobs if job.slug in selected_slugs]
+    if limit is not None:
+        jobs = jobs[:limit]
+    return jobs
+
+
+def resolve_job_config(
+    job: ImageJob,
+    env: dict[str, str],
+    style: PromptStyle | None,
+    options: GenerationOptions,
+) -> ResolvedJobConfig:
+    style_defaults = style.defaults if style else {}
+    category = (
+        slugify(str(style_defaults["category"]))
+        if job.category == "misc" and style_defaults.get("category")
+        else job.category
+    )
+    background = (
+        options.background_override
+        if options.background_override is not None
+        else job.background or style_defaults.get("background") or "opaque"
+    )
+    size = (
+        options.size_override
+        if options.size_override is not None
+        else job.size or style_defaults.get("size")
+    )
+    quality = (
+        options.quality_override
+        if options.quality_override is not None
+        else job.quality or style_defaults.get("quality")
+    )
+    if size:
+        parse_resolution(str(size))
+    return ResolvedJobConfig(
+        category=category,
+        model=options.model_override or job.model or style_defaults.get("model") or env["image_model"],
+        background=background,
+        num_images=job.n or 1,
+        size=size,
+        quality=quality,
+    )
+
+
+def build_generation_payload(
+    job: ImageJob,
+    style: PromptStyle | None,
+    config: ResolvedJobConfig,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "model": config.model,
+        "prompt": compose_prompt(job.prompt, style),
+    }
+    if config.background != "opaque":
+        payload["background"] = config.background
+    if config.num_images != 1:
+        payload["n"] = config.num_images
+    if config.size:
+        payload["size"] = config.size
+    if config.quality:
+        payload["quality"] = config.quality
+    return payload
+
+
 def generate_job(
     client: OpenAI | None,
     job: ImageJob,
@@ -523,49 +636,23 @@ def generate_job(
     options: GenerationOptions,
 ) -> dict[str, Any]:
     started_at = time.monotonic()
-    style_defaults = style.defaults if style else {}
-    resolved_category = (
-        slugify(str(style_defaults["category"]))
-        if job.category == "misc" and style_defaults.get("category")
-        else job.category
-    )
-    target_dir = output_dir if options.flat_output else (output_dir / resolved_category)
+    config = resolve_job_config(job, env, style, options)
+    target_dir = output_dir if options.flat_output else (output_dir / config.category)
     if not options.dry_run:
         ensure_dir(target_dir)
-
-    payload: dict[str, Any] = {
-        "model": options.model_override or job.model or style_defaults.get("model") or env["image_model"],
-        "prompt": compose_prompt(job.prompt, style),
-        "background": options.background_override or job.background or style_defaults.get("background") or "opaque",
-        "n": job.n or 1,
-    }
-
-    resolved_size = (
-        options.size_override
-        if options.size_override is not None
-        else job.size or style_defaults.get("size")
-    )
-    resolved_quality = (
-        options.quality_override
-        if options.quality_override is not None
-        else job.quality or style_defaults.get("quality")
-    )
-    if resolved_size:
-        payload["size"] = resolved_size
-    if resolved_quality:
-        payload["quality"] = resolved_quality
+    payload = build_generation_payload(job, style, config)
 
     print(
-        f"[generate] {job.slug} -> {resolved_category} "
+        f"[generate] {job.slug} -> {config.category} "
         f"({payload['model']}, size={payload.get('size', 'default')}, "
-        f"quality={payload.get('quality', 'default')}, n={payload['n']})",
+        f"quality={payload.get('quality', 'default')}, n={config.num_images})",
         flush=True,
     )
 
     if options.dry_run:
         return {
             "slug": job.slug,
-            "category": resolved_category,
+            "category": config.category,
             "style": style.slug if style else None,
             "base_prompt": job.prompt,
             "payload": payload,
@@ -622,14 +709,14 @@ def generate_job(
         images.append(
             {
                 "file": format_path_for_manifest(file_path),
-                "requested_size": resolved_size,
+                "requested_size": config.size,
                 **image_metadata,
             }
         )
 
     return {
         "slug": job.slug,
-        "category": resolved_category,
+        "category": config.category,
         "style": style.slug if style else None,
         "base_prompt": job.prompt,
         "payload": payload,
@@ -806,16 +893,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     env = read_env()
-    if args.num_images < 1:
-        raise RuntimeError("--num-images must be at least 1.")
-    if args.workers < 1:
-        raise RuntimeError("--workers must be at least 1.")
-    if args.max_retries < 1:
-        raise RuntimeError("--max-retries must be at least 1.")
-    if args.max_retries > DEFAULT_MAX_RETRIES:
-        raise RuntimeError(f"--max-retries cannot be greater than {DEFAULT_MAX_RETRIES}.")
-    if args.retry_delay < 0:
-        raise RuntimeError("--retry-delay must be 0 or greater.")
+    validate_main_args(args)
     timeout_seconds = resolve_timeout_seconds(
         str(args.timeout) if args.timeout is not None else env.get("timeout")
     )
@@ -827,13 +905,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     jobs, source = collect_jobs(args)
-
-    selected_slugs = {slugify(item) for item in args.only or []}
-    if selected_slugs:
-        jobs = [job for job in jobs if job.slug in selected_slugs]
-
-    if args.limit is not None:
-        jobs = jobs[: args.limit]
+    jobs = filter_jobs(jobs, only=args.only, limit=args.limit)
 
     if not jobs:
         raise RuntimeError("No jobs matched the current filters.")
