@@ -16,7 +16,7 @@ dev = [
 ]
 
 [project.scripts]
-openai-image = "oepnai_image.cli:main"
+openai-image = "oepnai_image.cli:run_cli"
 
 [build-system]
 requires = ["hatchling"]

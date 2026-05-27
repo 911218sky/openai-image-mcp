@@ -1,4 +1,4 @@
-# oepnai_image
+# openai-image CLI
 
 用 CLI 產生 OpenAI 圖片，支援：
 
@@ -10,10 +10,16 @@
 
 ## 快速開始
 
+需求：
+
+- Python 3.12+
+- `uv`
+
 ```bash
-cd /home/sbplab/sky/agents/gen_image
-cp .env.example .env
+cd agents/gen_image
 uv sync
+cp .env.example .env
+uv run openai-image --list-styles
 ```
 
 `.env` 最少要填：
@@ -22,12 +28,13 @@ uv sync
 OPENAI_API_KEY=your_api_key_here
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_IMAGE_MODEL=gpt-image-1
-OPENAI_TIMEOUT_SECONDS=1200
+OPENAI_TIMEOUT_SECONDS=180
 ```
 
 注意：
 
 - `OPENAI_BASE_URL` 要填 API 根路徑，通常要到 `.../v1`
+- `--list-styles` 與 `--dry-run` 不會打 API，可先用來確認安裝與 payload
 - 尺寸的寬高都必須可被 `16` 整除
 - 如果供應商回 `Image generation is not enabled for this group`，通常是 key/權限問題，不是 prompt 問題
 
@@ -167,6 +174,15 @@ uv run openai-image --batch jobs.json
 }
 ```
 
+真實範例可直接看 `batches/`。
+
+只跑部分 jobs：
+
+```bash
+uv run openai-image --batch jobs.json --only poster-concept
+uv run openai-image --batch jobs.json --limit 3
+```
+
 ## Style
 
 列出 styles：
@@ -189,7 +205,7 @@ uv run openai-image \
 - `size=1536x864`
 - `quality=medium`
 
-style 檔放在 `prompt_styles/`，格式例如：
+style 檔放在 `prompt_styles/`，完整範例看 `prompt_styles/paper-figure.json`，最小格式例如：
 
 ```json
 {
@@ -219,6 +235,23 @@ generated_images/<timestamp>/
 
 - 生成的圖片
 - `manifest.json`
+
+預設會依 category 分資料夾，像這樣：
+
+```text
+generated_images/<timestamp>/
+  manifest.json
+  misc/
+    prompt-01-a-red-car.png
+```
+
+如果不要 category 子資料夾，改用 `--flat-output`。
+
+平行跑多個 jobs：
+
+```bash
+uv run openai-image --batch jobs.json --workers 4
+```
 
 ## 測試
 

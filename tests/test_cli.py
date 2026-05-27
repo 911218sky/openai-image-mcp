@@ -11,23 +11,27 @@ from PIL import Image
 
 from oepnai_image.cli import (
     build_size_from_ratio,
+    build_client,
     collect_jobs,
     compose_prompt,
+    default_output_root,
     format_style_listing,
     format_terminal_api_error,
+    generate_image_with_curl,
     GenerationOptions,
     generate_job,
-    generate_image_with_curl,
     generate_with_retries,
     ImageJob,
     inspect_png_bytes,
     load_batch_jobs,
     load_styles,
+    main,
     make_prompt_jobs,
     parse_args,
     response_item_to_png_bytes,
     resolve_timeout_seconds,
     resolve_style,
+    run_cli,
     resolve_size_argument,
     should_use_curl_transport,
     should_retry_exception,
@@ -152,6 +156,23 @@ def test_load_batch_jobs_requires_slug_and_prompt(tmp_path: Path) -> None:
         load_batch_jobs(batch_path)
 
 
+def test_load_batch_jobs_rejects_non_positive_n(tmp_path: Path) -> None:
+    batch_path = tmp_path / "jobs.json"
+    batch_path.write_text(
+        json.dumps(
+            {
+                "jobs": [
+                    {"slug": "bad", "prompt": "oops", "n": 0},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="greater than or equal to 1"):
+        load_batch_jobs(batch_path)
+
+
 def test_resolve_size_argument_accepts_resolution_alias() -> None:
     args = parse_args(["--prompt", "test", "--resolution", "1536x1024"])
     assert resolve_size_argument(args) == "1536x1024"
@@ -248,7 +269,7 @@ def test_generate_image_with_curl_returns_namespace(monkeypatch: pytest.MonkeyPa
 
     class FakeCompletedProcess:
         returncode = 0
-        stdout = json.dumps(response_body).encode("utf-8")
+        stdout = (json.dumps(response_body) + "\n__HTTP_STATUS__:200").encode("utf-8")
         stderr = b""
 
     captured = {}
@@ -273,6 +294,39 @@ def test_generate_image_with_curl_returns_namespace(monkeypatch: pytest.MonkeyPa
 
     assert result.data[0].b64_json == response_body["data"][0]["b64_json"]
     assert "https://xidaoapi.com/v1/images/generations" in captured["command"]
+
+
+def test_generate_image_with_curl_preserves_http_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    response_body = {
+        "error": {
+            "message": "Image generation is not enabled for this group",
+        }
+    }
+
+    class FakeCompletedProcess:
+        returncode = 0
+        stdout = (json.dumps(response_body) + "\n__HTTP_STATUS__:403").encode("utf-8")
+        stderr = b""
+
+    monkeypatch.setattr(
+        "oepnai_image.cli.subprocess.run",
+        lambda *args, **kwargs: FakeCompletedProcess(),
+    )
+
+    with pytest.raises(RuntimeError, match="Image generation is not enabled for this group") as excinfo:
+        generate_image_with_curl(
+            {
+                "api_key": "test-key",
+                "base_url": "https://xidaoapi.com/v1",
+                "image_model": "gpt-image-2",
+                "image_transport": "curl",
+                "timeout": "180",
+            },
+            {"model": "gpt-image-2", "prompt": "test"},
+            timeout_seconds=3,
+        )
+
+    assert getattr(excinfo.value, "status_code", None) == 403
 
 
 def test_generate_with_retries_does_not_retry_non_retryable_status() -> None:
@@ -359,6 +413,19 @@ def test_resolve_timeout_seconds_rejects_non_positive_value() -> None:
 def test_resolve_timeout_seconds_rejects_invalid_number() -> None:
     with pytest.raises(RuntimeError, match="number of seconds"):
         resolve_timeout_seconds("abc")
+
+
+def test_build_client_requires_api_key_with_local_env_hint() -> None:
+    with pytest.raises(RuntimeError, match="local \\.env file"):
+        build_client(
+            {
+                "api_key": "",
+                "base_url": "https://api.openai.com/v1",
+                "image_model": "gpt-image-1",
+                "image_transport": "sdk",
+                "timeout": "180",
+            }
+        )
 
 
 def test_load_styles_reads_json_definitions(tmp_path: Path) -> None:
@@ -578,3 +645,61 @@ def test_inspect_png_bytes_does_not_resize_requested_resolution() -> None:
         "final_size": "16x9",
         "resized": False,
     }
+
+
+def test_default_output_root_uses_current_working_directory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+    assert default_output_root() == tmp_path / "generated_images"
+
+
+def test_run_cli_returns_clean_error_for_unknown_style(capsys: pytest.CaptureFixture[str]) -> None:
+    exit_code = run_cli(["--prompt", "test", "--style", "does-not-exist", "--dry-run"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "[error] Unknown style" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_main_list_styles_does_not_require_env(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_TIMEOUT_SECONDS", "not-a-number")
+
+    exit_code = main(["--list-styles"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "paper-figure" in captured.out
+
+
+def test_validate_main_args_rejects_negative_limit() -> None:
+    args = parse_args(["--prompt", "test", "--limit", "-1"])
+
+    with pytest.raises(RuntimeError, match="--limit must be at least 1"):
+        from oepnai_image.cli import validate_main_args
+
+        validate_main_args(args)
+
+
+def test_generate_with_retries_does_not_retry_curl_permission_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = {"count": 0}
+
+    def fake_generate(**_: object) -> dict[str, str]:
+        calls["count"] += 1
+        exc = RuntimeError("Image generation is not enabled for this group")
+        exc.status_code = 403  # type: ignore[attr-defined]
+        raise exc
+
+    client = SimpleNamespace(images=SimpleNamespace(generate=fake_generate))
+    monkeypatch.setattr("oepnai_image.cli.time.sleep", lambda _: None)
+
+    with pytest.raises(RuntimeError, match="provider group/key"):
+        generate_with_retries(
+            client,
+            {"prompt": "test"},
+            job_slug="job-curl-403",
+            max_retries=5,
+            retry_delay_seconds=0,
+        )
+
+    assert calls["count"] == 1

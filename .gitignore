@@ -24,6 +24,7 @@ generated_images/
 outputs/
 batches/
 *.log
+test-curl
 
 # IDE / OS
 .vscode/

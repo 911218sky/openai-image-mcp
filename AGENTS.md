@@ -1,4 +1,4 @@
-# oepnai_image Agent Guide
+# openai-image Agent Guide
 
 ## 先做什麼
 
@@ -14,7 +14,13 @@
 
 ## 驗證
 
+先準備：
+
+```bash
+rtk uv sync --extra dev
+```
+
 ```bash
 rtk uv run pytest -q
-rtk python -m compileall -q src
+rtk uv run python -m compileall -q src
 ```

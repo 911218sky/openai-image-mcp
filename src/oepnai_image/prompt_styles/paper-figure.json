@@ -1,0 +1,13 @@
+{
+  "slug": "paper-figure",
+  "name": "Paper Figure",
+  "description": "Clean academic schematic figures.",
+  "template": "Create a clean academic figure about: {prompt}",
+  "defaults": {
+    "category": "paper-figures",
+    "model": "gpt-image-2",
+    "size": "1536x864",
+    "background": "opaque",
+    "quality": "medium"
+  }
+}

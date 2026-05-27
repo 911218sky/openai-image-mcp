@@ -13,22 +13,24 @@ from io import BytesIO
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime
+from importlib import resources
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 from openai import OpenAI
 from PIL import Image
 
 
-PACKAGE_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_OUTPUT_ROOT = PACKAGE_ROOT / "generated_images"
-DEFAULT_STYLE_DIR = PACKAGE_ROOT / "prompt_styles"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+FALLBACK_STYLE_DIR = REPO_ROOT / "prompt_styles"
+DEFAULT_OUTPUT_DIRNAME = "generated_images"
 DEFAULT_MAX_RETRIES = 5
 DEFAULT_TIMEOUT_SECONDS = 1200.0
 NON_RETRYABLE_STATUS_CODES = {400, 401, 403, 404}
 SIZE_DIVISIBILITY = 16
+BUILTIN_STYLE_RESOURCE_DIR = "prompt_styles"
 
 
 def slugify(value: str) -> str:
@@ -42,6 +44,10 @@ def ensure_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
 
 
+def default_output_root() -> Path:
+    return Path.cwd() / DEFAULT_OUTPUT_DIRNAME
+
+
 def load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -49,7 +55,7 @@ def load_json(path: Path) -> dict[str, Any]:
 def format_path_for_manifest(path: Path) -> str:
     resolved = path.resolve()
     try:
-        return str(resolved.relative_to(PACKAGE_ROOT))
+        return str(resolved.relative_to(Path.cwd().resolve()))
     except ValueError:
         return str(resolved)
 
@@ -192,7 +198,7 @@ class ImageJob:
             size=merged.get("size"),
             quality=merged.get("quality"),
             background=merged.get("background"),
-            n=int(merged.get("n", 1)),
+            n=validate_num_images(merged.get("n", 1), source=f"Batch job '{slug}' field 'n'"),
             style=merged.get("style"),
         )
 
@@ -229,12 +235,28 @@ class ResolvedJobConfig:
     quality: str | None
 
 
-def load_style_file(path: Path) -> PromptStyle:
-    data = load_json(path)
-    slug = slugify(str(data.get("slug") or path.stem))
+def make_runtime_error(message: str, *, status_code: int | None = None) -> RuntimeError:
+    error = RuntimeError(message)
+    if status_code is not None:
+        error.status_code = status_code  # type: ignore[attr-defined]
+    return error
+
+
+def validate_num_images(value: Any, *, source: str) -> int:
+    try:
+        count = int(value)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f"{source} must be an integer greater than or equal to 1.") from exc
+    if count < 1:
+        raise RuntimeError(f"{source} must be greater than or equal to 1.")
+    return count
+
+
+def load_style_definition(data: dict[str, Any], *, source: str) -> PromptStyle:
+    slug = slugify(str(data.get("slug") or Path(source).stem))
     template = str(data.get("template") or "").strip()
     if not template:
-        raise RuntimeError(f"Style template is missing or empty: {path}")
+        raise RuntimeError(f"Style template is missing or empty: {source}")
     return PromptStyle(
         slug=slug,
         name=str(data.get("name") or slug),
@@ -244,10 +266,37 @@ def load_style_file(path: Path) -> PromptStyle:
     )
 
 
-def load_styles(style_dir: Path) -> dict[str, PromptStyle]:
-    if not style_dir.exists():
-        return {}
+def load_style_file(path: Path) -> PromptStyle:
+    return load_style_definition(load_json(path), source=str(path))
+
+
+def load_builtin_styles() -> dict[str, PromptStyle]:
     styles: dict[str, PromptStyle] = {}
+    try:
+        resource_root = resources.files("oepnai_image").joinpath(BUILTIN_STYLE_RESOURCE_DIR)
+        if resource_root.is_dir():
+            for resource in sorted(resource_root.iterdir(), key=lambda item: item.name):
+                if resource.name.endswith(".json"):
+                    style = load_style_definition(
+                        json.loads(resource.read_text(encoding="utf-8")),
+                        source=f"{BUILTIN_STYLE_RESOURCE_DIR}/{resource.name}",
+                    )
+                    styles[style.slug] = style
+            return styles
+    except (FileNotFoundError, ModuleNotFoundError):
+        pass
+
+    if FALLBACK_STYLE_DIR.exists():
+        for path in sorted(FALLBACK_STYLE_DIR.glob("*.json")):
+            style = load_style_file(path)
+            styles[style.slug] = style
+    return styles
+
+
+def load_styles(style_dir: Path | None = None) -> dict[str, PromptStyle]:
+    styles = load_builtin_styles()
+    if style_dir is None or not style_dir.exists():
+        return styles
     for path in sorted(style_dir.glob("*.json")):
         style = load_style_file(path)
         styles[style.slug] = style
@@ -267,6 +316,8 @@ def format_style_listing(styles: dict[str, PromptStyle]) -> str:
 def validate_main_args(args: argparse.Namespace) -> None:
     if args.num_images < 1:
         raise RuntimeError("--num-images must be at least 1.")
+    if args.limit is not None and args.limit < 1:
+        raise RuntimeError("--limit must be at least 1.")
     if args.workers < 1:
         raise RuntimeError("--workers must be at least 1.")
     if args.max_retries < 1:
@@ -298,7 +349,9 @@ def compose_prompt(base_prompt: str, style: PromptStyle | None) -> str:
 
 
 def read_env() -> dict[str, str]:
-    load_dotenv(PACKAGE_ROOT / ".env")
+    dotenv_path = find_dotenv(usecwd=True)
+    if dotenv_path:
+        load_dotenv(dotenv_path, override=False)
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").strip()
     image_model = os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-1").strip()
@@ -327,7 +380,7 @@ def resolve_timeout_seconds(value: str | None) -> float:
 
 def build_client(env: dict[str, str], timeout_seconds: float | None = None) -> OpenAI:
     if not env["api_key"]:
-        raise RuntimeError("OPENAI_API_KEY is missing. Fill oepnai_image/.env before running.")
+        raise RuntimeError("OPENAI_API_KEY is missing. Set it in the environment or in a local .env file.")
     timeout = timeout_seconds if timeout_seconds is not None else resolve_timeout_seconds(env.get("timeout"))
     return OpenAI(
         api_key=env["api_key"],
@@ -391,7 +444,7 @@ def generate_image_with_curl(
     timeout_seconds: float,
 ) -> Any:
     if not env["api_key"]:
-        raise RuntimeError("OPENAI_API_KEY is missing. Fill oepnai_image/.env before running.")
+        raise RuntimeError("OPENAI_API_KEY is missing. Set it in the environment or in a local .env file.")
 
     command = [
         "curl",
@@ -405,13 +458,17 @@ def generate_image_with_curl(
         f"Authorization: Bearer {env['api_key']}",
         "-d",
         json.dumps(payload),
+        "--write-out",
+        "\n__HTTP_STATUS__:%{http_code}",
     ]
     result = subprocess.run(command, check=False, capture_output=True)
-    stdout = result.stdout.decode("utf-8", errors="replace")
+    stdout_with_status = result.stdout.decode("utf-8", errors="replace")
     stderr = result.stderr.decode("utf-8", errors="replace").strip()
+    stdout, _, status_line = stdout_with_status.rpartition("\n__HTTP_STATUS__:")
+    http_status = int(status_line) if status_line.isdigit() else None
 
     if result.returncode != 0:
-        detail = stderr or stdout or f"curl exited with status {result.returncode}"
+        detail = stderr or stdout or stdout_with_status or f"curl exited with status {result.returncode}"
         raise RuntimeError(detail)
 
     try:
@@ -426,7 +483,7 @@ def generate_image_with_curl(
             message = error.get("message") or json.dumps(error, ensure_ascii=False)
         else:
             message = str(error)
-        raise RuntimeError(message)
+        raise make_runtime_error(message, status_code=http_status)
 
     return json.loads(json.dumps(response), object_hook=lambda data: SimpleNamespace(**data))
 
@@ -601,7 +658,7 @@ def resolve_job_config(
         category=category,
         model=options.model_override or job.model or style_defaults.get("model") or env["image_model"],
         background=background,
-        num_images=job.n or 1,
+        num_images=job.n if job.n is not None else 1,
         size=size,
         quality=quality,
     )
@@ -777,8 +834,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--style-dir",
         type=Path,
-        default=DEFAULT_STYLE_DIR,
-        help="Directory containing JSON prompt styles.",
+        default=None,
+        help="Optional directory containing extra JSON prompt styles.",
     )
     parser.add_argument(
         "--list-styles",
@@ -892,26 +949,27 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    env = read_env()
     validate_main_args(args)
+
+    if args.list_styles:
+        styles = load_styles(args.style_dir)
+        print(format_style_listing(styles))
+        return 0
+
+    env = read_env()
     timeout_seconds = resolve_timeout_seconds(
         str(args.timeout) if args.timeout is not None else env.get("timeout")
     )
     resolved_size = resolve_size_argument(args)
-    styles = load_styles(args.style_dir)
-
-    if args.list_styles:
-        print(format_style_listing(styles))
-        return 0
-
     jobs, source = collect_jobs(args)
     jobs = filter_jobs(jobs, only=args.only, limit=args.limit)
 
     if not jobs:
         raise RuntimeError("No jobs matched the current filters.")
 
+    styles = load_styles(args.style_dir) if args.style or any(job.style for job in jobs) else {}
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    output_dir = args.output_dir or (DEFAULT_OUTPUT_ROOT / timestamp)
+    output_dir = args.output_dir or (default_output_root() / timestamp)
     if not args.dry_run:
         ensure_dir(output_dir)
 
@@ -976,9 +1034,13 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-if __name__ == "__main__":
+def run_cli(argv: list[str] | None = None) -> int:
     try:
-        raise SystemExit(main())
+        return main(argv)
     except Exception as exc:
         print(f"[error] {exc}", file=sys.stderr)
-        raise SystemExit(1)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(run_cli())
