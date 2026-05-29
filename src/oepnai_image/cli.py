@@ -354,7 +354,7 @@ def read_env() -> dict[str, str]:
         load_dotenv(dotenv_path, override=False)
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").strip()
-    image_model = os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-1").strip()
+    image_model = os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-2").strip()
     image_transport = os.getenv("OPENAI_IMAGE_TRANSPORT", "auto").strip().lower()
     timeout = os.getenv("OPENAI_TIMEOUT_SECONDS", str(DEFAULT_TIMEOUT_SECONDS)).strip()
     return {
@@ -824,7 +824,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--model",
         default=None,
-        help="Optional model override, for example gpt-image-1.",
+        help="Optional model override, for example gpt-image-2.",
     )
     parser.add_argument(
         "--style",

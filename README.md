@@ -27,7 +27,7 @@ uv run openai-image --list-styles
 ```env
 OPENAI_API_KEY=your_api_key_here
 OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_IMAGE_MODEL=gpt-image-1
+OPENAI_IMAGE_MODEL=gpt-image-2
 OPENAI_TIMEOUT_SECONDS=180
 ```
 
@@ -160,7 +160,7 @@ uv run openai-image --batch jobs.json
 {
   "defaults": {
     "category": "misc",
-    "model": "gpt-image-1",
+    "model": "gpt-image-2",
     "size": "1024x1024",
     "background": "opaque",
     "n": 1

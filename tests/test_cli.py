@@ -46,7 +46,7 @@ def test_slugify_falls_back_to_image() -> None:
 def test_make_prompt_jobs_creates_distinct_jobs() -> None:
     jobs = make_prompt_jobs(
         ["A red car", "A blue car"],
-        model="gpt-image-1",
+        model="gpt-image-2",
         size="1024x1024",
         quality=None,
         background="opaque",
@@ -68,7 +68,7 @@ def test_make_prompt_jobs_creates_distinct_jobs() -> None:
 def test_make_prompt_jobs_uses_filename_prefix_with_index() -> None:
     jobs = make_prompt_jobs(
         ["A red car", "A blue car"],
-        model="gpt-image-1",
+        model="gpt-image-2",
         size=None,
         quality=None,
         background=None,
@@ -421,7 +421,7 @@ def test_build_client_requires_api_key_with_local_env_hint() -> None:
             {
                 "api_key": "",
                 "base_url": "https://api.openai.com/v1",
-                "image_model": "gpt-image-1",
+                "image_model": "gpt-image-2",
                 "image_transport": "sdk",
                 "timeout": "180",
             }
@@ -555,7 +555,7 @@ def test_generate_job_uses_style_model_size_and_quality_defaults(tmp_path: Path)
         client=None,
         job=job,
         output_dir=tmp_path / "out",
-        env={"image_model": "gpt-image-1"},
+        env={"image_model": "gpt-image-2"},
         style=style,
         options=options,
     )
@@ -595,7 +595,7 @@ def test_generate_job_writes_api_png_without_reencoding(tmp_path: Path) -> None:
         client=client,
         job=ImageJob(slug="sample", prompt="sample prompt", filename_prefix="sample"),
         output_dir=tmp_path,
-        env={"image_model": "gpt-image-1"},
+        env={"image_model": "gpt-image-2"},
         style=None,
         options=options,
     )
@@ -628,7 +628,7 @@ def test_generate_job_raises_on_empty_response_data(tmp_path: Path) -> None:
             client=client,
             job=ImageJob(slug="sample", prompt="sample prompt", filename_prefix="sample"),
             output_dir=tmp_path,
-            env={"image_model": "gpt-image-1"},
+            env={"image_model": "gpt-image-2"},
             style=None,
             options=options,
         )
