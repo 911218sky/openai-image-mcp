@@ -1,10 +1,11 @@
 [project]
-name = "oepnai-image"
+name = "openai-image"
 version = "0.1.0"
 description = "CLI for generating images from one or many prompts with OpenAI image models."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "mcp>=1.9.0",
     "openai>=1.79.0",
     "pillow>=11.0.0",
     "python-dotenv>=1.0.1",
@@ -17,6 +18,7 @@ dev = [
 
 [project.scripts]
 openai-image = "oepnai_image.cli:run_cli"
+openai-image-mcp = "oepnai_image.mcp_server:run_mcp"
 
 [build-system]
 requires = ["hatchling"]

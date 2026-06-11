@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Install dependencies
+        run: uv sync --extra dev
+      - name: Run tests
+        run: uv run pytest -q
+      - name: Compile
+        run: uv run python -m compileall -q src
+      - name: Validate plugin metadata
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path.cwd()
+          manifest = json.loads((root / ".codex-plugin" / "plugin.json").read_text())
+          mcp = json.loads((root / ".mcp.json").read_text())
+          skill = root / "skills" / "openai-image" / "SKILL.md"
+
+          assert manifest["name"] == "openai-image"
+          assert manifest["skills"] == "./skills/"
+          assert manifest["mcpServers"] == "./.mcp.json"
+          assert "openai-image" in mcp["mcpServers"]
+          assert skill.exists()
+          assert "OPENAI_API_KEY" in mcp["mcpServers"]["openai-image"]["env_vars"]
+          PY

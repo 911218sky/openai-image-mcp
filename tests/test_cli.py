@@ -14,6 +14,7 @@ from oepnai_image.cli import (
     build_client,
     collect_jobs,
     compose_prompt,
+    curl_config_value,
     default_output_root,
     format_style_listing,
     format_terminal_api_error,
@@ -37,6 +38,7 @@ from oepnai_image.cli import (
     should_retry_exception,
     slugify,
 )
+from oepnai_image.workflow import GenerationRequest, run_generation_request
 
 
 def test_slugify_falls_back_to_image() -> None:
@@ -274,8 +276,9 @@ def test_generate_image_with_curl_returns_namespace(monkeypatch: pytest.MonkeyPa
 
     captured = {}
 
-    def fake_run(command: list[str], **_: object) -> FakeCompletedProcess:
+    def fake_run(command: list[str], **kwargs: object) -> FakeCompletedProcess:
         captured["command"] = command
+        captured["input"] = kwargs["input"]
         return FakeCompletedProcess()
 
     monkeypatch.setattr("oepnai_image.cli.subprocess.run", fake_run)
@@ -293,7 +296,11 @@ def test_generate_image_with_curl_returns_namespace(monkeypatch: pytest.MonkeyPa
     )
 
     assert result.data[0].b64_json == response_body["data"][0]["b64_json"]
-    assert "https://xidaoapi.com/v1/images/generations" in captured["command"]
+    assert captured["command"] == ["curl", "--config", "-"]
+    config = captured["input"].decode("utf-8")
+    assert "https://xidaoapi.com/v1/images/generations" in config
+    assert "Authorization: Bearer test-key" in config
+    assert "test-key" not in captured["command"]
 
 
 def test_generate_image_with_curl_preserves_http_status(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -703,3 +710,35 @@ def test_generate_with_retries_does_not_retry_curl_permission_error(monkeypatch:
         )
 
     assert calls["count"] == 1
+
+
+def test_curl_config_value_escapes_unsafe_characters() -> None:
+    assert curl_config_value('Bearer "abc"\nnext') == '"Bearer \\"abc\\"\\nnext"'
+
+
+def test_workflow_request_dry_run_returns_manifest_without_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    manifest = run_generation_request(
+        GenerationRequest(
+            prompts=["a clean diagram of an MCP image server"],
+            style="paper-figure",
+            dry_run=True,
+            aspect_ratio="16:9",
+        )
+    )
+
+    assert manifest["dry_run"] is True
+    assert manifest["jobs"][0]["payload"]["size"] == "1536x864"
+    assert manifest["jobs"][0]["style"] == "paper-figure"
+    assert not (tmp_path / "generated_images").exists()
+
+
+def test_mcp_server_tools_are_importable() -> None:
+    from oepnai_image import mcp_server
+
+    assert callable(mcp_server.generate_image)
+    assert callable(mcp_server.generate_images_batch)
+    assert callable(mcp_server.plan_image_generation)
+    assert callable(mcp_server.list_prompt_styles)

@@ -1,83 +1,76 @@
-# openai-image CLI
+# OpenAI Image
 
-用 CLI 產生 OpenAI 圖片，支援：
+OpenAI Image is a local image-generation toolkit that works as:
 
-- 單一或多個 prompt
-- 從文字檔載入 prompts
-- 從 JSON batch 跑多筆 jobs
-- style 模板
-- 自訂尺寸、比例、輸出路徑
+- a Codex plugin with a bundled skill
+- a stdio MCP server for Codex, Claude Code, and IDE MCP clients
+- a local `openai-image` CLI
 
-## 快速開始
+It generates PNG files through OpenAI-compatible image APIs, writes a structured `manifest.json`, supports batch jobs, prompt styles, dry-run planning, custom dimensions, retries, and non-OpenAI compatible base URLs.
 
-需求：
+## Requirements
 
 - Python 3.12+
 - `uv`
+- `OPENAI_API_KEY`
+
+## Quick Start
 
 ```bash
-cd agents/gen_image
-uv sync
+git clone https://github.com/911218sky/openai-image.git
+cd openai-image
+uv sync --extra dev
 cp .env.example .env
 uv run openai-image --list-styles
 ```
 
-`.env` 最少要填：
+Set `.env`:
 
 ```env
 OPENAI_API_KEY=your_api_key_here
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_IMAGE_MODEL=gpt-image-2
-OPENAI_TIMEOUT_SECONDS=180
+OPENAI_IMAGE_TRANSPORT=auto
+OPENAI_TIMEOUT_SECONDS=1200
 ```
 
-注意：
+## MCP Tools
 
-- `OPENAI_BASE_URL` 要填 API 根路徑，通常要到 `.../v1`
-- `--list-styles` 與 `--dry-run` 不會打 API，可先用來確認安裝與 payload
-- 尺寸的寬高都必須可被 `16` 整除
-- 如果供應商回 `Image generation is not enabled for this group`，通常是 key/權限問題，不是 prompt 問題
+| Tool | Use |
+| --- | --- |
+| `list_prompt_styles` | List bundled and custom prompt styles. |
+| `plan_image_generation` | Dry-run one prompt and inspect payload/manifest shape. |
+| `generate_image` | Generate one prompt and return saved PNG paths. |
+| `generate_images_batch` | Run a JSON batch with optional filters and workers. |
 
-## 最常用指令
+Generic MCP config:
 
-顯示說明：
-
-```bash
-uv run openai-image --help
+```json
+{
+  "mcpServers": {
+    "openai-image": {
+      "command": "uv",
+      "args": ["run", "openai-image-mcp"],
+      "cwd": "/absolute/path/to/openai-image",
+      "env": {
+        "OPENAI_API_KEY": "your_api_key_here"
+      }
+    }
+  }
+}
 ```
 
-單張：
+For Codex plugin installation and IDE notes, see [Install](docs/install.md) and [IDE Clients](docs/ide-clients.md).
+
+## CLI Examples
+
+Single image:
 
 ```bash
 uv run openai-image --prompt "a cinematic photo of a red sports car"
 ```
 
-多張 prompt：
-
-```bash
-uv run openai-image \
-  --prompt "a watercolor cat reading a newspaper" \
-  --prompt "an isometric tiny bookstore at night"
-```
-
-每個 prompt 生成多張：
-
-```bash
-uv run openai-image \
-  --prompt "a minimalist mountain logo" \
-  --num-images 3
-```
-
-指定輸出資料夾與檔名前綴：
-
-```bash
-uv run openai-image \
-  --prompt "a cinematic photo of a red sports car" \
-  --output-dir ./outputs/car \
-  --filename-prefix car-hero
-```
-
-只看最終 payload，不打 API：
+Plan without calling the API:
 
 ```bash
 uv run openai-image \
@@ -85,76 +78,37 @@ uv run openai-image \
   --dry-run
 ```
 
-## 尺寸
-
-直接指定：
+Use a style:
 
 ```bash
 uv run openai-image \
-  --prompt "a futuristic city skyline at dusk" \
-  --size 1536x1024
+  --style paper-figure \
+  --prompt "a diagram explaining microphone-array beamforming"
 ```
 
-或用寬高：
+Run a batch:
 
 ```bash
-uv run openai-image \
-  --prompt "a futuristic city skyline at dusk" \
-  --width 1536 \
-  --height 1024
+uv run openai-image --batch jobs.json --workers 4
 ```
 
-或用比例：
+## Dimensions
+
+Direct size:
 
 ```bash
-uv run openai-image \
-  --prompt "a futuristic city skyline at dusk" \
-  --aspect-ratio 16:9
+uv run openai-image --prompt "city skyline" --size 1536x1024
 ```
 
-可再搭配：
+Aspect ratio:
 
 ```bash
-uv run openai-image \
-  --prompt "a futuristic city skyline at dusk" \
-  --aspect-ratio 16:9 \
-  --long-edge 1920
+uv run openai-image --prompt "city skyline" --aspect-ratio 16:9 --long-edge 1920
 ```
 
-避免這種非法尺寸：
+Width and height must both be divisible by `16`.
 
-```text
-1320x1080
-```
-
-如果你要 `11:9` 橫幅，優先用：
-
-- `1232x1008`
-- `1408x1152`
-- `1584x1296`
-
-## Prompt 檔與 Batch
-
-文字檔每行一個 prompt：
-
-```bash
-uv run openai-image --prompts-file prompts.txt
-```
-
-`prompts.txt`：
-
-```text
-a studio product photo of a glass bottle
-an anime street scene in the rain
-```
-
-Batch：
-
-```bash
-uv run openai-image --batch jobs.json
-```
-
-最小格式：
+## Batch Format
 
 ```json
 {
@@ -174,38 +128,26 @@ uv run openai-image --batch jobs.json
 }
 ```
 
-真實範例可直接看 `batches/`。
+## Output
 
-只跑部分 jobs：
+Default output:
 
-```bash
-uv run openai-image --batch jobs.json --only poster-concept
-uv run openai-image --batch jobs.json --limit 3
+```text
+generated_images/<timestamp>/
+  manifest.json
+  misc/
+    prompt-01-example.png
 ```
 
-## Style
+Use `--flat-output` to skip category subfolders.
 
-列出 styles：
+## Prompt Styles
 
-```bash
-uv run openai-image --list-styles
-```
+Bundled style:
 
-套用 style：
+- `paper-figure`: clean academic schematic figures, default `1536x864`, `quality=medium`
 
-```bash
-uv run openai-image \
-  --style paper-figure \
-  --prompt "a diagram explaining microphone-array beamforming"
-```
-
-內建 `paper-figure` 適合論文圖草稿，預設會帶：
-
-- `model=gpt-image-2`
-- `size=1536x864`
-- `quality=medium`
-
-style 檔放在 `prompt_styles/`，完整範例看 `prompt_styles/paper-figure.json`，最小格式例如：
+Style files are JSON:
 
 ```json
 {
@@ -223,39 +165,24 @@ style 檔放在 `prompt_styles/`，完整範例看 `prompt_styles/paper-figure.j
 }
 ```
 
-## 輸出
-
-預設輸出到：
-
-```text
-generated_images/<timestamp>/
-```
-
-每次執行會寫出：
-
-- 生成的圖片
-- `manifest.json`
-
-預設會依 category 分資料夾，像這樣：
-
-```text
-generated_images/<timestamp>/
-  manifest.json
-  misc/
-    prompt-01-a-red-car.png
-```
-
-如果不要 category 子資料夾，改用 `--flat-output`。
-
-平行跑多個 jobs：
-
-```bash
-uv run openai-image --batch jobs.json --workers 4
-```
-
-## 測試
+## Development
 
 ```bash
 uv sync --extra dev
 uv run pytest -q
+uv run python -m compileall -q src
+python3 path/to/plugin-creator/scripts/validate_plugin.py .
 ```
+
+See [Development](docs/development.md).
+
+## Security
+
+- Do not commit `.env`.
+- Do not print or commit `OPENAI_API_KEY`.
+- Generated images, batches, local caches, and build outputs are ignored by git.
+- Provider permission errors such as `Image generation is not enabled for this group` are account/key issues, not prompt issues.
+
+## License
+
+AGPL-3.0-only. See [LICENSE](LICENSE).

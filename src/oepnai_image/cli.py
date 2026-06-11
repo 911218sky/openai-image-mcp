@@ -10,9 +10,7 @@ import time
 import sys
 import urllib.request
 from io import BytesIO
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import datetime
 from importlib import resources
 from pathlib import Path
 from types import SimpleNamespace
@@ -437,6 +435,16 @@ def image_generation_endpoint(base_url: str) -> str:
     return f"{base_url.rstrip('/')}/images/generations"
 
 
+def curl_config_value(value: str) -> str:
+    escaped = (
+        value.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\r", "\\r")
+        .replace("\n", "\\n")
+    )
+    return f'"{escaped}"'
+
+
 def generate_image_with_curl(
     env: dict[str, str],
     payload: dict[str, Any],
@@ -448,20 +456,22 @@ def generate_image_with_curl(
 
     command = [
         "curl",
-        "-sS",
-        "--max-time",
-        f"{timeout_seconds:g}",
-        image_generation_endpoint(env["base_url"]),
-        "-H",
-        "Content-Type: application/json",
-        "-H",
-        f"Authorization: Bearer {env['api_key']}",
-        "-d",
-        json.dumps(payload),
-        "--write-out",
-        "\n__HTTP_STATUS__:%{http_code}",
+        "--config",
+        "-",
     ]
-    result = subprocess.run(command, check=False, capture_output=True)
+    config = "\n".join(
+        [
+            "silent",
+            "show-error",
+            f"max-time = {curl_config_value(f'{timeout_seconds:g}')}",
+            f"url = {curl_config_value(image_generation_endpoint(env['base_url']))}",
+            f"header = {curl_config_value('Content-Type: application/json')}",
+            f"header = {curl_config_value('Authorization: Bearer ' + env['api_key'])}",
+            f"data = {curl_config_value(json.dumps(payload))}",
+            f"write-out = {curl_config_value(chr(10) + '__HTTP_STATUS__:%{http_code}')}",
+        ]
+    )
+    result = subprocess.run(command, check=False, capture_output=True, input=config.encode("utf-8"))
     stdout_with_status = result.stdout.decode("utf-8", errors="replace")
     stderr = result.stderr.decode("utf-8", errors="replace").strip()
     stdout, _, status_line = stdout_with_status.rpartition("\n__HTTP_STATUS__:")
@@ -956,81 +966,15 @@ def main(argv: list[str] | None = None) -> int:
         print(format_style_listing(styles))
         return 0
 
-    env = read_env()
-    timeout_seconds = resolve_timeout_seconds(
-        str(args.timeout) if args.timeout is not None else env.get("timeout")
-    )
-    resolved_size = resolve_size_argument(args)
-    jobs, source = collect_jobs(args)
-    jobs = filter_jobs(jobs, only=args.only, limit=args.limit)
+    from .workflow import run_generation
 
-    if not jobs:
-        raise RuntimeError("No jobs matched the current filters.")
-
-    styles = load_styles(args.style_dir) if args.style or any(job.style for job in jobs) else {}
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    output_dir = args.output_dir or (default_output_root() / timestamp)
-    if not args.dry_run:
-        ensure_dir(output_dir)
-
-    client = build_client(env, timeout_seconds=timeout_seconds) if not args.dry_run and args.workers == 1 else None
-    options = GenerationOptions(
-        size_override=resolved_size,
-        quality_override=args.quality,
-        model_override=args.model,
-        background_override=args.background,
-        flat_output=args.flat_output,
-        max_retries=args.max_retries,
-        retry_delay_seconds=args.retry_delay,
-        timeout_seconds=timeout_seconds,
-        dry_run=args.dry_run,
-    )
-    manifest: dict[str, Any] = {
-        "created_at": datetime.now().isoformat(timespec="seconds"),
-        "source": source,
-        "output_dir": format_path_for_manifest(output_dir),
-        "jobs": [],
-    }
-
-    if args.workers == 1 or args.dry_run:
-        for job in jobs:
-            result = generate_job(
-                client=client,
-                job=job,
-                output_dir=output_dir,
-                env=env,
-                style=resolve_style(args.style or job.style, styles),
-                options=options,
-            )
-            manifest["jobs"].append(result)
-    else:
-        with ThreadPoolExecutor(max_workers=args.workers) as executor:
-            future_map = {
-                executor.submit(
-                    generate_job,
-                    None,
-                    job,
-                    output_dir,
-                    env,
-                    resolve_style(args.style or job.style, styles),
-                    options,
-                ): job.slug
-                for job in jobs
-            }
-            for future in as_completed(future_map):
-                manifest["jobs"].append(future.result())
-        manifest["jobs"].sort(key=lambda item: item["slug"])
+    manifest = run_generation(args)
 
     if args.dry_run:
         print(json.dumps(manifest, ensure_ascii=False, indent=2))
         print("[done] dry run only; no files written")
     else:
-        manifest_path = output_dir / "manifest.json"
-        manifest_path.write_text(
-            json.dumps(manifest, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        print(f"[done] wrote manifest: {manifest_path}")
+        print(f"[done] wrote manifest: {manifest['manifest_path']}")
     return 0
 
 
