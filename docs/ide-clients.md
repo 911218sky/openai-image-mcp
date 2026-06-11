@@ -29,7 +29,7 @@ Use the same stdio command:
 {
   "command": "uv",
   "args": ["run", "openai-image-mcp"],
-  "cwd": "/absolute/path/to/openai-image"
+  "cwd": "/absolute/path/to/openai-image-mcp"
 }
 ```
 

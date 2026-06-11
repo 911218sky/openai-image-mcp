@@ -10,8 +10,8 @@
 ## Local Setup
 
 ```bash
-git clone https://github.com/911218sky/openai-image.git
-cd openai-image
+git clone https://github.com/911218sky/openai-image-mcp.git
+cd openai-image-mcp
 uv sync --extra dev
 cp .env.example .env
 ```
@@ -88,7 +88,7 @@ Use stdio:
     "openai-image-mcp": {
       "command": "uv",
       "args": ["run", "openai-image-mcp"],
-      "cwd": "/absolute/path/to/openai-image",
+      "cwd": "/absolute/path/to/openai-image-mcp",
       "env": {
         "OPENAI_API_KEY": "your_api_key_here"
       }
