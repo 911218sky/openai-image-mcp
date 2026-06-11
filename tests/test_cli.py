@@ -743,3 +743,32 @@ def test_mcp_server_tools_are_importable() -> None:
     assert callable(mcp_server.generate_images_batch)
     assert callable(mcp_server.plan_image_generation)
     assert callable(mcp_server.list_prompt_styles)
+
+
+def test_mcp_server_enriches_public_images_for_librechat(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from oepnai_image import mcp_server
+
+    public_root = tmp_path / "public" / "images"
+    image_path = public_root / "openai-image-mcp" / "travel" / "china-travel-map.png"
+    image_path.parent.mkdir(parents=True)
+    image_path.write_bytes(b"png")
+
+    monkeypatch.setenv("OPENAI_IMAGE_PUBLIC_IMAGES_ROOT", str(public_root))
+    monkeypatch.setenv("OPENAI_IMAGE_PUBLIC_URL_PREFIX", "/images")
+
+    manifest = mcp_server._enrich_for_librechat(
+        {
+            "jobs": [
+                {
+                    "slug": "china-travel-map",
+                    "base_prompt": "China travel map",
+                    "images": [{"file": str(image_path)}],
+                }
+            ]
+        }
+    )
+
+    image = manifest["jobs"][0]["images"][0]
+    assert image["title"] == "China Travel Map"
+    assert image["url"] == "/images/openai-image-mcp/travel/china-travel-map.png"
+    assert "![China Travel Map](/images/openai-image-mcp/travel/china-travel-map.png)" in manifest["text"]

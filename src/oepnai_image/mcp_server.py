@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import re
 import sys
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -12,17 +14,97 @@ from .workflow import GenerationRequest, run_generation_request
 
 
 mcp = FastMCP("openai-image-mcp", json_response=True)
+OUTPUT_DIR_ENV = "OPENAI_IMAGE_OUTPUT_DIR"
+PUBLIC_IMAGES_ROOT_ENV = "OPENAI_IMAGE_PUBLIC_IMAGES_ROOT"
+PUBLIC_URL_PREFIX_ENV = "OPENAI_IMAGE_PUBLIC_URL_PREFIX"
+DEFAULT_PUBLIC_IMAGES_ROOT = Path("/app/client/public/images")
+DEFAULT_PUBLIC_OUTPUT_SUBDIR = "openai-image-mcp"
+DEFAULT_PUBLIC_URL_PREFIX = "/images"
 
 
 def _path(value: str | None) -> Path | None:
     return Path(value).expanduser() if value else None
 
 
+def _public_images_root() -> Path:
+    return Path(os.getenv(PUBLIC_IMAGES_ROOT_ENV, str(DEFAULT_PUBLIC_IMAGES_ROOT))).expanduser()
+
+
+def _public_url_prefix() -> str:
+    prefix = os.getenv(PUBLIC_URL_PREFIX_ENV, DEFAULT_PUBLIC_URL_PREFIX).strip() or DEFAULT_PUBLIC_URL_PREFIX
+    if not prefix.startswith("/"):
+        prefix = f"/{prefix}"
+    return prefix.rstrip("/")
+
+
+def _default_output_dir(output_dir: str | None) -> Path | None:
+    explicit = _path(output_dir) or _path(os.getenv(OUTPUT_DIR_ENV))
+    if explicit:
+        return explicit
+
+    public_root = _public_images_root()
+    if public_root.exists():
+        return public_root / DEFAULT_PUBLIC_OUTPUT_SUBDIR
+    return None
+
+
+def _public_url_for_file(file_path: str) -> str | None:
+    path = Path(file_path)
+    if not path.is_absolute():
+        path = Path.cwd() / path
+
+    try:
+        relative = path.resolve().relative_to(_public_images_root().resolve())
+    except ValueError:
+        return None
+
+    return f"{_public_url_prefix()}/{relative.as_posix()}"
+
+
+def _title_from_image(image: dict[str, Any], job: dict[str, Any]) -> str:
+    file_stem = Path(str(image.get("file") or "")).stem
+    if file_stem and not file_stem.startswith("prompt-"):
+        title = re.sub(r"[-_]+", " ", file_stem).strip()
+    else:
+        title = str(job.get("base_prompt") or job.get("slug") or "Generated Image").strip()
+
+    title = re.sub(r"\s+", " ", title)
+    if re.fullmatch(r"[a-z0-9][a-z0-9 -]*", title):
+        title = title.title()
+    return title[:80].rstrip() or "Generated Image"
+
+
+def _enrich_for_librechat(manifest: dict[str, Any]) -> dict[str, Any]:
+    markdown_blocks: list[str] = []
+
+    for job in manifest.get("jobs", []):
+        if not isinstance(job, dict):
+            continue
+        for image in job.get("images", []):
+            if not isinstance(image, dict):
+                continue
+
+            title = _title_from_image(image, job)
+            image["title"] = title
+            url = _public_url_for_file(str(image.get("file") or ""))
+            if not url:
+                continue
+
+            image["url"] = url
+            markdown_blocks.append(f"### {title}\n\n![{title}]({url})")
+
+    if markdown_blocks:
+        markdown = "\n\n".join(markdown_blocks)
+        manifest["text"] = markdown
+        manifest["display_markdown"] = markdown
+    return manifest
+
+
 def _run_request(request: GenerationRequest) -> dict[str, Any]:
     # MCP stdio reserves stdout for JSON-RPC frames. The CLI workflow prints
     # human progress lines, so route them to stderr when called as a tool.
     with redirect_stdout(sys.stderr):
-        return run_generation_request(request)
+        return _enrich_for_librechat(run_generation_request(request))
 
 
 @mcp.tool()
@@ -103,7 +185,7 @@ def generate_image(
     return _run_request(
         GenerationRequest(
             prompts=[prompt],
-            output_dir=_path(output_dir),
+            output_dir=_default_output_dir(output_dir),
             category=category,
             filename_prefix=filename_prefix,
             model=model,
@@ -147,7 +229,7 @@ def generate_images_batch(
     return _run_request(
         GenerationRequest(
             batch=_path(batch_path),
-            output_dir=_path(output_dir),
+            output_dir=_default_output_dir(output_dir),
             model=model,
             style=style,
             style_dir=_path(style_dir),
