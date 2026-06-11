@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import os
 import re
 import sys
@@ -8,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import CallToolResult, ImageContent, TextContent
 
 from .cli import format_style_listing, load_styles
 from .workflow import GenerationRequest, run_generation_request
@@ -20,6 +22,8 @@ PUBLIC_URL_PREFIX_ENV = "OPENAI_IMAGE_PUBLIC_URL_PREFIX"
 DEFAULT_PUBLIC_IMAGES_ROOT = Path("/app/client/public/images")
 DEFAULT_PUBLIC_OUTPUT_SUBDIR = "openai-image-mcp"
 DEFAULT_PUBLIC_URL_PREFIX = "/images"
+EMBED_MAX_BYTES_ENV = "OPENAI_IMAGE_EMBED_MAX_BYTES"
+DEFAULT_EMBED_MAX_BYTES = 8 * 1024 * 1024
 
 
 def _path(value: str | None) -> Path | None:
@@ -61,6 +65,17 @@ def _public_url_for_file(file_path: str) -> str | None:
     return f"{_public_url_prefix()}/{relative.as_posix()}"
 
 
+def _embed_max_bytes() -> int:
+    raw = os.getenv(EMBED_MAX_BYTES_ENV)
+    if not raw:
+        return DEFAULT_EMBED_MAX_BYTES
+    try:
+        parsed = int(raw)
+    except ValueError:
+        return DEFAULT_EMBED_MAX_BYTES
+    return parsed if parsed > 0 else DEFAULT_EMBED_MAX_BYTES
+
+
 def _title_from_image(image: dict[str, Any], job: dict[str, Any]) -> str:
     file_stem = Path(str(image.get("file") or "")).stem
     if file_stem and not file_stem.startswith("prompt-"):
@@ -98,6 +113,44 @@ def _enrich_for_librechat(manifest: dict[str, Any]) -> dict[str, Any]:
         manifest["text"] = markdown
         manifest["display_markdown"] = markdown
     return manifest
+
+
+def _image_content_for_file(file_path: str) -> ImageContent | None:
+    path = Path(file_path)
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    if not path.is_file():
+        return None
+    if path.stat().st_size > _embed_max_bytes():
+        return None
+
+    return ImageContent(
+        type="image",
+        data=base64.b64encode(path.read_bytes()).decode("ascii"),
+        mimeType="image/png",
+    )
+
+
+def _to_tool_result(manifest: dict[str, Any]) -> CallToolResult:
+    content: list[TextContent | ImageContent] = []
+    text = str(manifest.get("display_markdown") or manifest.get("text") or "").strip()
+    if text:
+        content.append(TextContent(type="text", text=text))
+
+    for job in manifest.get("jobs", []):
+        if not isinstance(job, dict):
+            continue
+        for image in job.get("images", []):
+            if not isinstance(image, dict):
+                continue
+            image_content = _image_content_for_file(str(image.get("file") or ""))
+            if image_content:
+                content.append(image_content)
+
+    if not content:
+        content.append(TextContent(type="text", text="(No images generated)"))
+
+    return CallToolResult(content=content, structuredContent=manifest)
 
 
 def _run_request(request: GenerationRequest) -> dict[str, Any]:
@@ -139,23 +192,25 @@ def plan_image_generation(
     category: str = "misc",
     filename_prefix: str | None = None,
     style_dir: str | None = None,
-) -> dict[str, Any]:
+) -> CallToolResult:
     """Resolve the payload and manifest shape for one prompt without calling the image API."""
-    return _run_request(
-        GenerationRequest(
-            prompts=[prompt],
-            category=category,
-            filename_prefix=filename_prefix,
-            model=model,
-            style=style,
-            style_dir=_path(style_dir),
-            dry_run=True,
-            size=size,
-            aspect_ratio=aspect_ratio,
-            long_edge=long_edge,
-            short_edge=short_edge,
-            quality=quality,
-            background=background,
+    return _to_tool_result(
+        _run_request(
+            GenerationRequest(
+                prompts=[prompt],
+                category=category,
+                filename_prefix=filename_prefix,
+                model=model,
+                style=style,
+                style_dir=_path(style_dir),
+                dry_run=True,
+                size=size,
+                aspect_ratio=aspect_ratio,
+                long_edge=long_edge,
+                short_edge=short_edge,
+                quality=quality,
+                background=background,
+            )
         )
     )
 
@@ -180,28 +235,30 @@ def generate_image(
     max_retries: int = 5,
     retry_delay: float = 1.0,
     style_dir: str | None = None,
-) -> dict[str, Any]:
+) -> CallToolResult:
     """Generate image files from one prompt and return the manifest with saved file paths."""
-    return _run_request(
-        GenerationRequest(
-            prompts=[prompt],
-            output_dir=_default_output_dir(output_dir),
-            category=category,
-            filename_prefix=filename_prefix,
-            model=model,
-            style=style,
-            style_dir=_path(style_dir),
-            num_images=num_images,
-            max_retries=max_retries,
-            retry_delay=retry_delay,
-            timeout=timeout,
-            size=size,
-            aspect_ratio=aspect_ratio,
-            long_edge=long_edge,
-            short_edge=short_edge,
-            quality=quality,
-            background=background,
-            flat_output=flat_output,
+    return _to_tool_result(
+        _run_request(
+            GenerationRequest(
+                prompts=[prompt],
+                output_dir=_default_output_dir(output_dir),
+                category=category,
+                filename_prefix=filename_prefix,
+                model=model,
+                style=style,
+                style_dir=_path(style_dir),
+                num_images=num_images,
+                max_retries=max_retries,
+                retry_delay=retry_delay,
+                timeout=timeout,
+                size=size,
+                aspect_ratio=aspect_ratio,
+                long_edge=long_edge,
+                short_edge=short_edge,
+                quality=quality,
+                background=background,
+                flat_output=flat_output,
+            )
         )
     )
 
@@ -224,26 +281,28 @@ def generate_images_batch(
     retry_delay: float = 1.0,
     style_dir: str | None = None,
     dry_run: bool = False,
-) -> dict[str, Any]:
+) -> CallToolResult:
     """Generate image files from a JSON batch definition."""
-    return _run_request(
-        GenerationRequest(
-            batch=_path(batch_path),
-            output_dir=_default_output_dir(output_dir),
-            model=model,
-            style=style,
-            style_dir=_path(style_dir),
-            limit=limit,
-            only=only,
-            dry_run=dry_run,
-            workers=workers,
-            max_retries=max_retries,
-            retry_delay=retry_delay,
-            timeout=timeout,
-            size=size,
-            quality=quality,
-            background=background,
-            flat_output=flat_output,
+    return _to_tool_result(
+        _run_request(
+            GenerationRequest(
+                batch=_path(batch_path),
+                output_dir=_default_output_dir(output_dir),
+                model=model,
+                style=style,
+                style_dir=_path(style_dir),
+                limit=limit,
+                only=only,
+                dry_run=dry_run,
+                workers=workers,
+                max_retries=max_retries,
+                retry_delay=retry_delay,
+                timeout=timeout,
+                size=size,
+                quality=quality,
+                background=background,
+                flat_output=flat_output,
+            )
         )
     )
 

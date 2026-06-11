@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import base64
+import json
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -772,3 +772,43 @@ def test_mcp_server_enriches_public_images_for_librechat(monkeypatch: pytest.Mon
     assert image["title"] == "China Travel Map"
     assert image["url"] == "/images/openai-image-mcp/travel/china-travel-map.png"
     assert "![China Travel Map](/images/openai-image-mcp/travel/china-travel-map.png)" in manifest["text"]
+
+    tool_result = mcp_server._to_tool_result(manifest)
+    assert tool_result.structuredContent == manifest
+    assert tool_result.content[0].type == "text"
+    assert "![China Travel Map](/images/openai-image-mcp/travel/china-travel-map.png)" in tool_result.content[0].text
+    assert tool_result.content[1].type == "image"
+    assert tool_result.content[1].data == base64.b64encode(b"png").decode("ascii")
+    assert tool_result.content[1].mimeType == "image/png"
+
+
+def test_mcp_server_skips_inline_image_when_file_is_too_large(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from oepnai_image import mcp_server
+
+    public_root = tmp_path / "public" / "images"
+    image_path = public_root / "openai-image-mcp" / "travel" / "large-map.png"
+    image_path.parent.mkdir(parents=True)
+    image_path.write_bytes(b"png-data")
+
+    monkeypatch.setenv("OPENAI_IMAGE_PUBLIC_IMAGES_ROOT", str(public_root))
+    monkeypatch.setenv("OPENAI_IMAGE_PUBLIC_URL_PREFIX", "/images")
+    monkeypatch.setenv("OPENAI_IMAGE_EMBED_MAX_BYTES", "1")
+
+    manifest = mcp_server._enrich_for_librechat(
+        {
+            "jobs": [
+                {
+                    "slug": "large-map",
+                    "base_prompt": "Large map",
+                    "images": [{"file": str(image_path)}],
+                }
+            ]
+        }
+    )
+    tool_result = mcp_server._to_tool_result(manifest)
+
+    assert len(tool_result.content) == 1
+    assert tool_result.content[0].type == "text"
+    assert "![Large Map](/images/openai-image-mcp/travel/large-map.png)" in tool_result.content[0].text
