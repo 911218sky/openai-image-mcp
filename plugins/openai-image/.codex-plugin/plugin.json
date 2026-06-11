@@ -1,0 +1,37 @@
+{
+  "name": "openai-image",
+  "version": "0.1.0",
+  "description": "Generate OpenAI-compatible images from Codex, Claude Code, IDE MCP clients, or a local CLI.",
+  "author": {
+    "name": "911218sky"
+  },
+  "license": "AGPL-3.0-only",
+  "keywords": [
+    "codex",
+    "mcp",
+    "openai",
+    "image-generation",
+    "claude-code"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "OpenAI Image",
+    "shortDescription": "Generate image files from prompts or batch jobs through MCP.",
+    "longDescription": "OpenAI Image adds a reusable image-generation workflow for Codex, Claude Code, and IDE MCP clients. It supports prompt styles, batch JSON files, dry-run planning, OpenAI-compatible base URLs, retries, and structured manifests with saved file paths.",
+    "developerName": "911218sky",
+    "category": "Productivity",
+    "capabilities": [
+      "MCP image generation",
+      "Prompt style templates",
+      "Batch image jobs",
+      "Dry-run payload planning",
+      "OpenAI-compatible base URLs"
+    ],
+    "defaultPrompt": [
+      "Generate a polished product mockup image from this prompt.",
+      "Plan an image payload with the paper-figure style before generating.",
+      "Run this image batch and return the saved file paths."
+    ]
+  }
+}

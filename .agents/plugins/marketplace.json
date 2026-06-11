@@ -1,0 +1,20 @@
+{
+  "name": "openai-image-mcp",
+  "interface": {
+    "displayName": "OpenAI Image MCP"
+  },
+  "plugins": [
+    {
+      "name": "openai-image",
+      "source": {
+        "source": "local",
+        "path": "./plugins/openai-image"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

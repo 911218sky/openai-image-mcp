@@ -1,4 +1,4 @@
-# openai-image Agent Guide
+# OpenAI Image MCP Agent Guide
 
 ## 先做什麼
 

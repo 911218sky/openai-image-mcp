@@ -1,0 +1,31 @@
+[project]
+name = "openai-image"
+version = "0.1.0"
+description = "CLI for generating images from one or many prompts with OpenAI image models."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "mcp>=1.9.0",
+    "openai>=1.79.0",
+    "pillow>=11.0.0",
+    "python-dotenv>=1.0.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.5",
+]
+
+[project.scripts]
+openai-image = "oepnai_image.cli:run_cli"
+openai-image-mcp = "oepnai_image.mcp_server:run_mcp"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/oepnai_image"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]

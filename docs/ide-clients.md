@@ -1,6 +1,8 @@
 # IDE And MCP Clients
 
-This plugin exposes a stdio MCP server, so it can be used by Codex, Claude Code, and IDEs that support MCP server configuration.
+OpenAI Image MCP exposes a stdio MCP server, so it can be used by Codex, Claude Code, and IDEs that support MCP server configuration.
+
+For Codex, prefer the plugin install path in [Install](install.md). The generic stdio config below is for clients that do not consume Codex plugin manifests.
 
 ## Tools
 

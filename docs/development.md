@@ -3,6 +3,7 @@
 ## Layout
 
 ```text
+.agents/plugins/marketplace.json Repo-local Codex marketplace
 .codex-plugin/plugin.json      Codex plugin manifest
 .mcp.json                      MCP server configuration
 skills/openai-image/SKILL.md   Codex workflow guidance
@@ -29,4 +30,4 @@ python3 path/to/plugin-creator/scripts/validate_plugin.py .
 - Run the validation commands above.
 - Verify `uv run openai-image --prompt "test" --dry-run` prints a manifest.
 - Verify `uv run python -m oepnai_image.mcp_server` imports and starts under an MCP smoke test.
-- Reinstall the Codex plugin and open a new thread.
+- Reinstall the Codex plugin with `codex plugin add openai-image@openai-image-mcp` and open a new thread.

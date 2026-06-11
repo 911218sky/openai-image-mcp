@@ -1,0 +1,13 @@
+{
+  "slug": "paper-figure",
+  "name": "Paper Figure",
+  "description": "Clean academic schematic figures with white background, thin vector linework, restrained teal-blue-orange accents, clear arrows, sparse labels, and publication-ready spacing. Optimized for one focused concept per image.",
+  "template": "Create a clean, publication-ready academic figure about: {prompt}\n\nStyle requirements:\n- white background with generous whitespace\n- vector-style schematic or conceptual diagram\n- thin crisp line art and precise geometry\n- restrained accent palette using teal, blue, and orange\n- clear directional arrows, labels, annotations, and callouts\n- light soft highlights only where helpful, no heavy shading\n- polished conference-paper figure aesthetic\n- balanced composition with readable structure and modular blocks\n- suitable for a machine learning, signal processing, or scientific paper\n- focus on exactly one main idea in this image\n- use only 3 to 5 major visual blocks unless the prompt explicitly asks for more\n- keep in-image text sparse, short, and label-like\n- prefer visual structure over long explanations\n\nAvoid:\n- photorealism\n- dark background\n- painterly textures\n- cluttered composition\n- decorative gradients dominating the image\n- comic or cartoon styling",
+  "defaults": {
+    "category": "paper-figures",
+    "model": "gpt-image-2",
+    "size": "1536x864",
+    "background": "opaque",
+    "quality": "medium"
+  }
+}

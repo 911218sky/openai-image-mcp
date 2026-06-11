@@ -25,12 +25,20 @@ jobs:
           root = Path.cwd()
           manifest = json.loads((root / ".codex-plugin" / "plugin.json").read_text())
           mcp = json.loads((root / ".mcp.json").read_text())
+          marketplace = json.loads((root / ".agents" / "plugins" / "marketplace.json").read_text())
           skill = root / "skills" / "openai-image" / "SKILL.md"
+          bundle = root / "plugins" / "openai-image"
 
           assert manifest["name"] == "openai-image"
           assert manifest["skills"] == "./skills/"
           assert manifest["mcpServers"] == "./.mcp.json"
+          assert marketplace["name"] == "openai-image-mcp"
+          assert marketplace["plugins"][0]["name"] == "openai-image"
+          assert marketplace["plugins"][0]["source"]["path"] == "./plugins/openai-image"
           assert "openai-image-mcp" in mcp["mcpServers"]
           assert skill.exists()
+          assert (bundle / ".codex-plugin" / "plugin.json").exists()
+          assert (bundle / ".mcp.json").exists()
+          assert (bundle / "skills" / "openai-image" / "SKILL.md").exists()
           assert "OPENAI_API_KEY" in mcp["mcpServers"]["openai-image-mcp"]["env_vars"]
           PY

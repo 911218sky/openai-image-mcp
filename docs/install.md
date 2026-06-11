@@ -1,4 +1,4 @@
-# Install
+# Install OpenAI Image MCP
 
 ## Requirements
 
@@ -36,29 +36,29 @@ uv run openai-image --list-styles
 
 ## Codex Plugin
 
-Install from a marketplace that points to this repository. For a local marketplace:
+This repository includes `.agents/plugins/marketplace.json`, so the simplest local install is:
 
 ```bash
-mkdir -p ~/plugins
-ln -s "$PWD" ~/plugins/openai-image
-mkdir -p ~/.agents/plugins
-ln -sfn ~/plugins ~/.agents/plugins/plugins
+codex plugin marketplace add .
+codex plugin add openai-image@openai-image-mcp
 ```
 
-Create or update `~/.agents/plugins/marketplace.json`:
+Start a new Codex thread after installing or refreshing the plugin so the bundled skill and MCP server reload.
+
+The marketplace entry in this repo is:
 
 ```json
 {
-  "name": "personal",
+  "name": "openai-image-mcp",
   "interface": {
-    "displayName": "Personal"
+    "displayName": "OpenAI Image MCP"
   },
   "plugins": [
     {
       "name": "openai-image",
       "source": {
         "source": "local",
-      "path": "./plugins/openai-image"
+        "path": "./plugins/openai-image"
       },
       "policy": {
         "installation": "AVAILABLE",
@@ -69,14 +69,6 @@ Create or update `~/.agents/plugins/marketplace.json`:
   ]
 }
 ```
-
-Then install:
-
-```bash
-codex plugin add openai-image@personal
-```
-
-Start a new Codex thread after installing or refreshing the plugin.
 
 ## Generic MCP Client
 

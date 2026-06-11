@@ -1,6 +1,6 @@
-# Subagent Review Notes
+# Review Notes
 
-This file records independent review passes used before publishing.
+This file records review areas used before publishing or refreshing the plugin.
 
 ## Review Areas
 
