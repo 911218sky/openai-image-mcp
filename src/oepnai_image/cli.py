@@ -5,7 +5,6 @@ import base64
 import json
 import os
 import re
-import subprocess
 import time
 import sys
 import urllib.request
@@ -13,9 +12,9 @@ from io import BytesIO
 from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
+import httpx
 from dotenv import find_dotenv, load_dotenv
 from openai import OpenAI
 from PIL import Image
@@ -388,11 +387,11 @@ def build_client(env: dict[str, str], timeout_seconds: float | None = None) -> O
     )
 
 
-def should_use_curl_transport(env: dict[str, str]) -> bool:
+def should_use_http_transport(env: dict[str, str]) -> bool:
     transport = env.get("image_transport", "auto")
-    if transport not in {"auto", "sdk", "curl"}:
-        raise RuntimeError("OPENAI_IMAGE_TRANSPORT must be one of: auto, sdk, curl.")
-    if transport == "curl":
+    if transport not in {"auto", "sdk", "http"}:
+        raise RuntimeError("OPENAI_IMAGE_TRANSPORT must be one of: auto, sdk, http.")
+    if transport == "http":
         return True
     if transport == "sdk":
         return False
@@ -435,17 +434,15 @@ def image_generation_endpoint(base_url: str) -> str:
     return f"{base_url.rstrip('/')}/images/generations"
 
 
-def curl_config_value(value: str) -> str:
-    escaped = (
-        value.replace("\\", "\\\\")
-        .replace('"', '\\"')
-        .replace("\r", "\\r")
-        .replace("\n", "\\n")
-    )
-    return f'"{escaped}"'
+def namespace_from_json(data: Any) -> Any:
+    if isinstance(data, dict):
+        return type("ImageResponse", (), {key: namespace_from_json(value) for key, value in data.items()})()
+    if isinstance(data, list):
+        return [namespace_from_json(item) for item in data]
+    return data
 
 
-def generate_image_with_curl(
+def generate_image_with_http(
     env: dict[str, str],
     payload: dict[str, Any],
     *,
@@ -454,48 +451,53 @@ def generate_image_with_curl(
     if not env["api_key"]:
         raise RuntimeError("OPENAI_API_KEY is missing. Set it in the environment or in a local .env file.")
 
-    command = [
-        "curl",
-        "--config",
-        "-",
-    ]
-    config = "\n".join(
-        [
-            "silent",
-            "show-error",
-            f"max-time = {curl_config_value(f'{timeout_seconds:g}')}",
-            f"url = {curl_config_value(image_generation_endpoint(env['base_url']))}",
-            f"header = {curl_config_value('Content-Type: application/json')}",
-            f"header = {curl_config_value('Authorization: Bearer ' + env['api_key'])}",
-            f"data = {curl_config_value(json.dumps(payload))}",
-            f"write-out = {curl_config_value(chr(10) + '__HTTP_STATUS__:%{http_code}')}",
-        ]
-    )
-    result = subprocess.run(command, check=False, capture_output=True, input=config.encode("utf-8"))
-    stdout_with_status = result.stdout.decode("utf-8", errors="replace")
-    stderr = result.stderr.decode("utf-8", errors="replace").strip()
-    stdout, _, status_line = stdout_with_status.rpartition("\n__HTTP_STATUS__:")
-    http_status = int(status_line) if status_line.isdigit() else None
-
-    if result.returncode != 0:
-        detail = stderr or stdout or stdout_with_status or f"curl exited with status {result.returncode}"
-        raise RuntimeError(detail)
+    try:
+        response = httpx.post(
+            image_generation_endpoint(env["base_url"]),
+            headers={
+                "Authorization": f"Bearer {env['api_key']}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=timeout_seconds,
+        )
+    except httpx.TimeoutException as exc:
+        raise RuntimeError(f"Image generation timed out after {timeout_seconds:g} seconds.") from exc
+    except httpx.HTTPError as exc:
+        raise RuntimeError(f"Image generation HTTP request failed: {exc}") from exc
 
     try:
-        response = json.loads(stdout)
-    except json.JSONDecodeError as exc:
-        snippet = stdout[:1000] if stdout else stderr
+        response_body = response.json()
+    except ValueError as exc:
+        snippet = response.text[:1000]
         raise RuntimeError(f"Image generation returned non-JSON response: {snippet}") from exc
 
-    if "error" in response:
-        error = response["error"]
+    if "error" in response_body:
+        error = response_body["error"]
         if isinstance(error, dict):
             message = error.get("message") or json.dumps(error, ensure_ascii=False)
         else:
             message = str(error)
-        raise make_runtime_error(message, status_code=http_status)
+        raise make_runtime_error(message, status_code=response.status_code)
 
-    return json.loads(json.dumps(response), object_hook=lambda data: SimpleNamespace(**data))
+    if response.status_code >= 400:
+        raise make_runtime_error(response.text[:1000], status_code=response.status_code)
+
+    return namespace_from_json(response_body)
+
+
+class HttpImagesAdapter:
+    def __init__(self, env: dict[str, str], timeout_seconds: float) -> None:
+        self.env = env
+        self.timeout_seconds = timeout_seconds
+
+    def generate(self, **payload: Any) -> Any:
+        return generate_image_with_http(self.env, payload, timeout_seconds=self.timeout_seconds)
+
+
+class HttpImageClient:
+    def __init__(self, env: dict[str, str], timeout_seconds: float) -> None:
+        self.images = HttpImagesAdapter(env, timeout_seconds)
 
 
 def inspect_png_bytes(image_bytes: bytes) -> dict[str, Any]:
@@ -727,17 +729,9 @@ def generate_job(
             "dry_run": True,
         }
 
-    if should_use_curl_transport(env):
+    if should_use_http_transport(env):
         response = generate_with_retries(
-            SimpleNamespace(
-                images=SimpleNamespace(
-                    generate=lambda **request_payload: generate_image_with_curl(
-                        env,
-                        request_payload,
-                        timeout_seconds=options.timeout_seconds,
-                    )
-                )
-            ),
+            HttpImageClient(env, options.timeout_seconds),
             payload,
             job_slug=job.slug,
             max_retries=options.max_retries,

@@ -5,6 +5,7 @@ description = "CLI for generating images from one or many prompts with OpenAI im
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "httpx>=0.28.1",
     "mcp>=1.9.0",
     "openai>=1.79.0",
     "pillow>=11.0.0",

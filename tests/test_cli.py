@@ -14,11 +14,10 @@ from oepnai_image.cli import (
     build_client,
     collect_jobs,
     compose_prompt,
-    curl_config_value,
     default_output_root,
     format_style_listing,
     format_terminal_api_error,
-    generate_image_with_curl,
+    generate_image_with_http,
     GenerationOptions,
     generate_job,
     generate_with_retries,
@@ -34,7 +33,7 @@ from oepnai_image.cli import (
     resolve_style,
     run_cli,
     resolve_size_argument,
-    should_use_curl_transport,
+    should_use_http_transport,
     should_retry_exception,
     slugify,
 )
@@ -248,7 +247,7 @@ def test_should_retry_exception_false_for_403() -> None:
     assert should_retry_exception(exc) is False
 
 
-def test_should_use_curl_transport_for_non_openai_base_url() -> None:
+def test_should_use_http_transport_for_non_openai_base_url() -> None:
     env = {
         "api_key": "test-key",
         "base_url": "https://xidaoapi.com/v1",
@@ -257,10 +256,10 @@ def test_should_use_curl_transport_for_non_openai_base_url() -> None:
         "timeout": "180",
     }
 
-    assert should_use_curl_transport(env) is True
+    assert should_use_http_transport(env) is True
 
 
-def test_generate_image_with_curl_returns_namespace(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_generate_image_with_http_returns_namespace(monkeypatch: pytest.MonkeyPatch) -> None:
     response_body = {
         "data": [
             {
@@ -269,26 +268,30 @@ def test_generate_image_with_curl_returns_namespace(monkeypatch: pytest.MonkeyPa
         ]
     }
 
-    class FakeCompletedProcess:
-        returncode = 0
-        stdout = (json.dumps(response_body) + "\n__HTTP_STATUS__:200").encode("utf-8")
-        stderr = b""
+    class FakeResponse:
+        status_code = 200
+        text = json.dumps(response_body)
 
-    captured = {}
+        def json(self) -> dict[str, object]:
+            return response_body
 
-    def fake_run(command: list[str], **kwargs: object) -> FakeCompletedProcess:
-        captured["command"] = command
-        captured["input"] = kwargs["input"]
-        return FakeCompletedProcess()
+    captured: dict[str, object] = {}
 
-    monkeypatch.setattr("oepnai_image.cli.subprocess.run", fake_run)
+    def fake_post(url: str, **kwargs: object) -> FakeResponse:
+        captured["url"] = url
+        captured["headers"] = kwargs["headers"]
+        captured["json"] = kwargs["json"]
+        captured["timeout"] = kwargs["timeout"]
+        return FakeResponse()
 
-    result = generate_image_with_curl(
+    monkeypatch.setattr("oepnai_image.cli.httpx.post", fake_post)
+
+    result = generate_image_with_http(
         {
             "api_key": "test-key",
             "base_url": "https://xidaoapi.com/v1",
             "image_model": "gpt-image-2",
-            "image_transport": "curl",
+            "image_transport": "http",
             "timeout": "180",
         },
         {"model": "gpt-image-2", "prompt": "test"},
@@ -296,37 +299,38 @@ def test_generate_image_with_curl_returns_namespace(monkeypatch: pytest.MonkeyPa
     )
 
     assert result.data[0].b64_json == response_body["data"][0]["b64_json"]
-    assert captured["command"] == ["curl", "--config", "-"]
-    config = captured["input"].decode("utf-8")
-    assert "https://xidaoapi.com/v1/images/generations" in config
-    assert "Authorization: Bearer test-key" in config
-    assert "test-key" not in captured["command"]
+    assert captured["url"] == "https://xidaoapi.com/v1/images/generations"
+    assert captured["json"] == {"model": "gpt-image-2", "prompt": "test"}
+    assert captured["timeout"] == 3
+    assert captured["headers"] == {
+        "Authorization": "Bearer test-key",
+        "Content-Type": "application/json",
+    }
 
 
-def test_generate_image_with_curl_preserves_http_status(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_generate_image_with_http_preserves_http_status(monkeypatch: pytest.MonkeyPatch) -> None:
     response_body = {
         "error": {
             "message": "Image generation is not enabled for this group",
         }
     }
 
-    class FakeCompletedProcess:
-        returncode = 0
-        stdout = (json.dumps(response_body) + "\n__HTTP_STATUS__:403").encode("utf-8")
-        stderr = b""
+    class FakeResponse:
+        status_code = 403
+        text = json.dumps(response_body)
 
-    monkeypatch.setattr(
-        "oepnai_image.cli.subprocess.run",
-        lambda *args, **kwargs: FakeCompletedProcess(),
-    )
+        def json(self) -> dict[str, object]:
+            return response_body
+
+    monkeypatch.setattr("oepnai_image.cli.httpx.post", lambda *args, **kwargs: FakeResponse())
 
     with pytest.raises(RuntimeError, match="Image generation is not enabled for this group") as excinfo:
-        generate_image_with_curl(
+        generate_image_with_http(
             {
                 "api_key": "test-key",
                 "base_url": "https://xidaoapi.com/v1",
                 "image_model": "gpt-image-2",
-                "image_transport": "curl",
+                "image_transport": "http",
                 "timeout": "180",
             },
             {"model": "gpt-image-2", "prompt": "test"},
@@ -688,7 +692,7 @@ def test_validate_main_args_rejects_negative_limit() -> None:
         validate_main_args(args)
 
 
-def test_generate_with_retries_does_not_retry_curl_permission_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_generate_with_retries_does_not_retry_http_permission_error(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = {"count": 0}
 
     def fake_generate(**_: object) -> dict[str, str]:
@@ -704,16 +708,12 @@ def test_generate_with_retries_does_not_retry_curl_permission_error(monkeypatch:
         generate_with_retries(
             client,
             {"prompt": "test"},
-            job_slug="job-curl-403",
+            job_slug="job-http-403",
             max_retries=5,
             retry_delay_seconds=0,
         )
 
     assert calls["count"] == 1
-
-
-def test_curl_config_value_escapes_unsafe_characters() -> None:
-    assert curl_config_value('Bearer "abc"\nnext') == '"Bearer \\"abc\\"\\nnext"'
 
 
 def test_workflow_request_dry_run_returns_manifest_without_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

@@ -26,6 +26,8 @@ OPENAI_IMAGE_TRANSPORT=auto
 OPENAI_TIMEOUT_SECONDS=1200
 ```
 
+`uv` is the supported runner for the CLI and MCP server. Image requests are implemented in Python and do not require `curl`.
+
 Validate:
 
 ```bash

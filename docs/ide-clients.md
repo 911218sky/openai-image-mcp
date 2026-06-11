@@ -41,4 +41,4 @@ The MCP server returns JSON manifests with relative or absolute saved file paths
 
 - Use `plan_image_generation` before expensive or ambiguous prompts.
 - Keep generated files out of git unless the project explicitly wants assets committed.
-- Use `OPENAI_IMAGE_TRANSPORT=curl` for OpenAI-compatible providers whose SDK behavior differs from the official OpenAI API.
+- Use `OPENAI_IMAGE_TRANSPORT=http` for OpenAI-compatible providers whose SDK behavior differs from the official OpenAI API.

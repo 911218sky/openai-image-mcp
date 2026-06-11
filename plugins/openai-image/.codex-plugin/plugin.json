@@ -1,6 +1,6 @@
 {
   "name": "openai-image",
-  "version": "0.1.0",
+  "version": "0.1.0+codex.20260611082402",
   "description": "Generate OpenAI-compatible images from Codex, Claude Code, IDE MCP clients, or a local CLI.",
   "author": {
     "name": "911218sky"

@@ -34,6 +34,8 @@ OPENAI_IMAGE_TRANSPORT=auto
 OPENAI_TIMEOUT_SECONDS=1200
 ```
 
+This project is managed with `uv`. Image requests use the OpenAI SDK for the official API and a Python HTTP transport for OpenAI-compatible providers; no `curl` binary is required.
+
 ## Codex Plugin Install
 
 This repository includes a marketplace file, so Codex can install the plugin directly from the cloned repo:
