@@ -30,7 +30,7 @@ jobs:
           assert manifest["name"] == "openai-image"
           assert manifest["skills"] == "./skills/"
           assert manifest["mcpServers"] == "./.mcp.json"
-          assert "openai-image" in mcp["mcpServers"]
+          assert "openai-image-mcp" in mcp["mcpServers"]
           assert skill.exists()
-          assert "OPENAI_API_KEY" in mcp["mcpServers"]["openai-image"]["env_vars"]
+          assert "OPENAI_API_KEY" in mcp["mcpServers"]["openai-image-mcp"]["env_vars"]
           PY

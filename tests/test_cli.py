@@ -738,6 +738,7 @@ def test_workflow_request_dry_run_returns_manifest_without_env(monkeypatch: pyte
 def test_mcp_server_tools_are_importable() -> None:
     from oepnai_image import mcp_server
 
+    assert mcp_server.mcp.name == "openai-image-mcp"
     assert callable(mcp_server.generate_image)
     assert callable(mcp_server.generate_images_batch)
     assert callable(mcp_server.plan_image_generation)

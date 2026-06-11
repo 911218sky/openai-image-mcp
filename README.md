@@ -48,7 +48,7 @@ Generic MCP config:
 ```json
 {
   "mcpServers": {
-    "openai-image": {
+    "openai-image-mcp": {
       "command": "uv",
       "args": ["run", "openai-image-mcp"],
       "cwd": "/absolute/path/to/openai-image",

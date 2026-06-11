@@ -11,7 +11,7 @@ from .cli import format_style_listing, load_styles
 from .workflow import GenerationRequest, run_generation_request
 
 
-mcp = FastMCP("openai-image", json_response=True)
+mcp = FastMCP("openai-image-mcp", json_response=True)
 
 
 def _path(value: str | None) -> Path | None:

@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "openai-image": {
+    "openai-image-mcp": {
       "cwd": ".",
       "command": "uv",
       "args": [
