@@ -745,6 +745,23 @@ def test_mcp_server_tools_are_importable() -> None:
     assert callable(mcp_server.list_prompt_styles)
 
 
+def test_mcp_server_resolves_image_count_aliases() -> None:
+    from oepnai_image import mcp_server
+
+    assert mcp_server._resolve_num_images() == 1
+    assert mcp_server._resolve_num_images(3) == 3
+    assert mcp_server._resolve_num_images(1, n=5) == 5
+    assert mcp_server._resolve_num_images(1, count=4) == 4
+    assert mcp_server._resolve_num_images(1, image_count=2) == 2
+
+
+def test_mcp_server_rejects_invalid_image_count_aliases() -> None:
+    from oepnai_image import mcp_server
+
+    with pytest.raises(RuntimeError, match="n must be at least 1"):
+        mcp_server._resolve_num_images(n=0)
+
+
 def test_mcp_server_enriches_public_images_for_librechat(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     from oepnai_image import mcp_server
 

@@ -30,6 +30,33 @@ def _path(value: str | None) -> Path | None:
     return Path(value).expanduser() if value else None
 
 
+def _positive_int(value: int | None, *, name: str) -> int | None:
+    if value is None:
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f"{name} must be a positive integer.") from exc
+    if parsed < 1:
+        raise RuntimeError(f"{name} must be at least 1.")
+    return parsed
+
+
+def _resolve_num_images(
+    num_images: int = 1,
+    *,
+    n: int | None = None,
+    count: int | None = None,
+    image_count: int | None = None,
+) -> int:
+    """Resolve common image-count aliases used by LLMs and image APIs."""
+    for name, value in (("n", n), ("count", count), ("image_count", image_count)):
+        parsed = _positive_int(value, name=name)
+        if parsed is not None:
+            return parsed
+    return _positive_int(num_images, name="num_images") or 1
+
+
 def _public_images_root() -> Path:
     return Path(os.getenv(PUBLIC_IMAGES_ROOT_ENV, str(DEFAULT_PUBLIC_IMAGES_ROOT))).expanduser()
 
@@ -228,6 +255,9 @@ def generate_image(
     quality: str | None = None,
     background: str | None = None,
     num_images: int = 1,
+    n: int | None = None,
+    count: int | None = None,
+    image_count: int | None = None,
     category: str = "misc",
     filename_prefix: str | None = None,
     flat_output: bool = False,
@@ -236,7 +266,12 @@ def generate_image(
     retry_delay: float = 1.0,
     style_dir: str | None = None,
 ) -> CallToolResult:
-    """Generate image files from one prompt and return the manifest with saved file paths."""
+    """Generate one or more image files from a single prompt.
+
+    Use num_images to generate multiple variations in one tool call from the
+    same prompt. The aliases n, count, and image_count are also accepted and
+    override num_images when provided.
+    """
     return _to_tool_result(
         _run_request(
             GenerationRequest(
@@ -247,7 +282,12 @@ def generate_image(
                 model=model,
                 style=style,
                 style_dir=_path(style_dir),
-                num_images=num_images,
+                num_images=_resolve_num_images(
+                    num_images,
+                    n=n,
+                    count=count,
+                    image_count=image_count,
+                ),
                 max_retries=max_retries,
                 retry_delay=retry_delay,
                 timeout=timeout,
