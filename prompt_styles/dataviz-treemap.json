@@ -1,0 +1,13 @@
+{
+  "slug": "dataviz-treemap",
+  "name": "Treemap",
+  "description": "Modern treemap infographic with clean rectangular blocks, strong visual grouping, and crisp typography.",
+  "template": "Create a modern treemap infographic showing {prompt}\n\nStyle requirements:\n- Light neutral background\n- Controlled palette: forest green, desaturated blue, amber, terracotta, lavender-gray, charcoal outlines\n- Clean rectangular treemap with strong visual grouping\n- Crisp typography with precise edges\n- Clean hierarchy with header and legend\n- Sharp text rendering for technical gallery quality\n\nDensity control:\n- 5-10 major blocks with percentage\n- Nested smaller labels within blocks for detail\n- Compact side legend with total value\n- Balanced annotation density",
+  "defaults": {
+    "category": "dataviz",
+    "model": "gpt-image-2",
+    "aspect_ratio": "3:2",
+    "background": "opaque",
+    "quality": "high"
+  }
+}

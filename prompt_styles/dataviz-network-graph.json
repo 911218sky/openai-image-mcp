@@ -1,0 +1,13 @@
+{
+  "slug": "dataviz-network-graph",
+  "name": "Network Graph",
+  "description": "Sophisticated network graph with glowing nodes on dark canvas, showing connections and hierarchies.",
+  "template": "Create a sophisticated network graph visualization showing {prompt}\n\nStyle requirements:\n- Dark charcoal canvas background\n- Glowing node colors: teal, amber, coral, pale blue, white\n- Fine connecting lines with clean labels\n- Balanced, readable, intentionally designed layout\n- Clean hierarchy with accurate node-label placement\n- Anti-overlap spacing with subtle depth\n- Crisp typography for polished technical visualization\n\nDensity control:\n- 20-50 nodes with clear hub-and-spoke structure\n- Larger nodes for major hubs, smaller for peripheral\n- Edge labels used sparingly\n- Include legend and stats card (nodes, edges, density)",
+  "defaults": {
+    "category": "dataviz",
+    "model": "gpt-image-2",
+    "aspect_ratio": "3:2",
+    "background": "opaque",
+    "quality": "high"
+  }
+}

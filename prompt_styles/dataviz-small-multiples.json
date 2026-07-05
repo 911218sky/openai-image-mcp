@@ -1,0 +1,13 @@
+{
+  "slug": "dataviz-small-multiples",
+  "name": "Small Multiples Grid",
+  "description": "Clean editorial small-multiples grid showing multiple related charts with consistent axes and restrained palette.",
+  "template": "Create a clean editorial data visualization poster showing {prompt}\n\nStyle requirements:\n- White background, generous margins\n- Restrained palette: navy, rust, sky blue, olive, charcoal\n- Small-multiples grid with consistent axes across panels\n- Ultra-legible labels and crisp typography\n- Publication-grade chart rendering\n- Scientifically clear and visually elegant\n\nDensity control:\n- 8-16 mini-panels in grid layout\n- Each panel has identical structure for easy comparison\n- Aligned scales and consistent spacing\n- Clean hierarchy with title block and subtitle",
+  "defaults": {
+    "category": "dataviz",
+    "model": "gpt-image-2",
+    "aspect_ratio": "16:9",
+    "background": "opaque",
+    "quality": "high"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "slug": "dataviz-chord-diagram",
+  "name": "Chord Diagram",
+  "description": "Publication-quality chord diagram with circular composition, semi-transparent ribbons, and precise geometry.",
+  "template": "Create a publication-quality chord diagram visualizing {prompt}\n\nStyle requirements:\n- Bright ivory background with centered circular composition\n- Harmonious palette: cobalt, teal, ochre, coral, plum, graphite\n- Mathematically precise with clean arcs and semi-transparent ribbons\n- Highly legible labels around outer segments\n- Ribbon thickness implies volume while maintaining readability\n- Crisp labels with clear hierarchy and accurate geometry\n- Refined data-journalism aesthetic\n\nDensity control:\n- 6-12 outer segments around the circle\n- Numeric ticks at regular intervals\n- Small legend for categories\n- Balanced white space with elegant composition",
+  "defaults": {
+    "category": "dataviz",
+    "model": "gpt-image-2",
+    "aspect_ratio": "1:1",
+    "background": "opaque",
+    "quality": "high"
+  }
+}

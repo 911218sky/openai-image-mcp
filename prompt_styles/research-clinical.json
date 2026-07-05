@@ -1,0 +1,13 @@
+{
+  "slug": "research-clinical",
+  "name": "Research Clinical Figure",
+  "description": "Nature Medicine / Science style clinical research figures with patient cohorts, survival curves, and performance metrics.",
+  "template": "Create a {prompt}\n\nStyle requirements:\n- Nature Medicine / Science Translational Medicine style\n- Soft literature-science palette: muted teal, dusty blue, soft coral, pale sand\n- Clean 4-panel academic figure labeled A–D with small bold panel letters\n- White background, light gray axes, thin lines, ample margins\n- No neon colors, no dark background, Nature journal figure aesthetics\n- Readable labels, precise arrows, subtle gridlines\n- No decorative clutter, no fake logos, no watermark\n\nDensity control:\n- 4-6 major visual elements per panel\n- Each element should have clear scientific purpose\n- Use whitespace as breathing room\n- One clear focal point per panel with supporting context",
+  "defaults": {
+    "category": "research",
+    "model": "gpt-image-2",
+    "aspect_ratio": "3:2",
+    "background": "opaque",
+    "quality": "high"
+  }
+}

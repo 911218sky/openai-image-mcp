@@ -1,0 +1,43 @@
+{
+  "name": "openai-image",
+  "version": "0.3.0",
+  "description": "Generate OpenAI-compatible images with canvas integration. Supports prompt styles, batch jobs, canvas-based annotation workflows, and iterative image editing.",
+  "author": {
+    "name": "911218sky"
+  },
+  "license": "AGPL-3.0-only",
+  "keywords": [
+    "codex",
+    "mcp",
+    "openai",
+    "image-generation",
+    "canvas",
+    "tldraw",
+    "annotation",
+    "typescript"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "OpenAI Image + Canvas",
+    "shortDescription": "Generate and iterate on AI images with infinite canvas support.",
+    "longDescription": "OpenAI Image adds a reusable image-generation workflow for Codex, Claude Code, and IDE MCP clients. Now includes canvas-hand integration for infinite canvas workflows: generate images, place them on canvas, annotate with arrows, and iterate based on annotations. Fully TypeScript-based unified MCP server.",
+    "developerName": "911218sky",
+    "category": "Productivity",
+    "capabilities": [
+      "MCP image generation",
+      "10 bundled prompt styles",
+      "Batch image jobs",
+      "Dry-run payload planning",
+      "OpenAI-compatible base URLs",
+      "Infinite canvas (tldraw)",
+      "Annotation-driven editing",
+      "TypeScript implementation"
+    ],
+    "defaultPrompt": [
+      "Generate a polished product mockup image from this prompt.",
+      "Open my canvas and place an image on it.",
+      "Read my canvas annotations and redraw the image."
+    ]
+  }
+}

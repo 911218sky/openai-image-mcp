@@ -1,0 +1,13 @@
+{
+  "slug": "dataviz-choropleth",
+  "name": "Choropleth Map",
+  "description": "Polished geographic choropleth with minimalist cartographic style, clean borders, and sequential color palette.",
+  "template": "Create a polished geographic choropleth map showing {prompt}\n\nStyle requirements:\n- Off-white background with muted terrain hints\n- Sequential palette from pale sand to deep color\n- Minimalist cartographic style\n- Clearly separated regions with clean borders\n- Crisp labels and right-side legend\n- Publication-grade infographic clarity\n- Subtle cartographic detail with balanced composition\n\nDensity control:\n- 8-16 distinct regions/districts\n- Clean borders with crisp labels\n- Compact legend with 4-5 color steps\n- Annotation boxes for highest/lowest values",
+  "defaults": {
+    "category": "dataviz",
+    "model": "gpt-image-2",
+    "aspect_ratio": "16:9",
+    "background": "opaque",
+    "quality": "high"
+  }
+}

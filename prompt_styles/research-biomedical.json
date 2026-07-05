@@ -1,0 +1,13 @@
+{
+  "slug": "research-biomedical",
+  "name": "Research Biomedical Figure",
+  "description": "Nature / Cell style biomedical research figures with UMAP plots, dot plots, and cell trajectories.",
+  "template": "Create a {prompt}\n\nStyle requirements:\n- Nature / Cell style biomedical research figure\n- Soft minimal palette: pastel teal, sage, lavender, peach, slate, amber\n- Publication-ready with compact legends and readable micro-labels\n- White background, thin gray axes, restrained typography\n- Elegant spacing, no 3D, no glossy UI\n- No fake journal logo, no watermark\n\nDensity control:\n- 4-6 visual elements\n- Each element has clear biological purpose\n- Balance detail with clarity\n- One clear focal visualization with supporting analyses",
+  "defaults": {
+    "category": "research",
+    "model": "gpt-image-2",
+    "aspect_ratio": "3:2",
+    "background": "opaque",
+    "quality": "high"
+  }
+}

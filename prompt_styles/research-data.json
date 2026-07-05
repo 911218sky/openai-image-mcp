@@ -1,0 +1,13 @@
+{
+  "slug": "research-data",
+  "name": "Research Data Visualization",
+  "description": "Academic data plots with scaling curves, heatmaps, and benchmark comparisons.",
+  "template": "Create a {prompt}\n\nStyle requirements:\n- Academic data visualization figure\n- Soft literature palette: slate gray, muted navy, dusty teal, soft terracotta\n- Clean log-scaled or linear axes with precise tick marks\n- White background, thin gridlines, compact legends\n- Readable axis labels, subtle shading for confidence bands\n- No neon colors, no 3D effects, no decorative elements\n\nDensity control:\n- 3-5 data series or visual elements\n- Each series has clear analytical purpose\n- Use whitespace for clarity\n- One clear focal metric with supporting comparisons",
+  "defaults": {
+    "category": "research",
+    "model": "gpt-image-2",
+    "aspect_ratio": "16:9",
+    "background": "opaque",
+    "quality": "high"
+  }
+}

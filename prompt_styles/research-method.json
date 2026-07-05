@@ -1,0 +1,13 @@
+{
+  "slug": "research-method",
+  "name": "Research Method Pipeline",
+  "description": "Nature Biomedical Engineering / NeurIPS style method pipeline figures with architecture diagrams.",
+  "template": "Create a {prompt}\n\nStyle requirements:\n- Nature Biomedical Engineering / NeurIPS medical-AI method figure\n- Soft Nature/Science palette: muted teal, dusty blue, sage green, warm sand, coral accents\n- Left-to-right method pipeline with horizontal bands and panel labels A–C\n- White background, precise vector-like arrows, modest shadows only\n- Readable labels, lots of whitespace\n- No futuristic HUD, no clinical gore, no real hospital logos, no watermark\n\nDensity control:\n- 4-6 major pipeline stages\n- Each stage has clear architectural purpose\n- Use whitespace as breathing room between components\n- One clear processing flow with supporting modules",
+  "defaults": {
+    "category": "research",
+    "model": "gpt-image-2",
+    "aspect_ratio": "16:9",
+    "background": "opaque",
+    "quality": "high"
+  }
+}

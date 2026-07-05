@@ -1,0 +1,13 @@
+{
+  "slug": "research-systems",
+  "name": "Research Systems Architecture",
+  "description": "High-fidelity systems figures with zones, numbered flow markers, and warm-copper highlights.",
+  "template": "Create a {prompt}\n\nStyle requirements:\n- High-fidelity systems figure with subtle drop-shadows\n- Warm-copper highlights, numbered flow markers ①②③④\n- Zoned layout with clear hierarchical structure\n- White or light background, precise arrows, modest shadows\n- Readable labels, generous whitespace\n- No futuristic HUD, no decorative clutter\n\nDensity control:\n- 4-6 major system zones\n- Each zone has clear architectural purpose\n- Use whitespace as breathing room between components\n- One clear orchestration flow with supporting subsystems",
+  "defaults": {
+    "category": "research",
+    "model": "gpt-image-2",
+    "aspect_ratio": "16:9",
+    "background": "opaque",
+    "quality": "high"
+  }
+}
