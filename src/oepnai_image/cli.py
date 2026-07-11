@@ -42,7 +42,8 @@ def ensure_dir(path: Path) -> None:
 
 
 def default_output_root() -> Path:
-    return Path.cwd() / DEFAULT_OUTPUT_DIRNAME
+    configured = os.getenv("OPENAI_IMAGE_OUTPUT_DIR", "").strip()
+    return Path(configured).expanduser() if configured else Path.cwd() / DEFAULT_OUTPUT_DIRNAME
 
 
 def load_json(path: Path) -> dict[str, Any]:

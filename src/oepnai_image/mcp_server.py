@@ -1,29 +1,40 @@
 from __future__ import annotations
 
 import base64
+import ipaddress
 import os
 import re
+import socket
 import sys
 from contextlib import redirect_stdout
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import CallToolResult, ImageContent, TextContent
 
-from .cli import format_style_listing, load_styles
-from .workflow import GenerationRequest, run_generation_request
+from .cli import format_style_listing, load_styles, read_env
+from .workflow import GenerationRequest, run_generation_request_with_env
 
 
 mcp = FastMCP("openai-image-mcp", json_response=True)
 OUTPUT_DIR_ENV = "OPENAI_IMAGE_OUTPUT_DIR"
 PUBLIC_IMAGES_ROOT_ENV = "OPENAI_IMAGE_PUBLIC_IMAGES_ROOT"
 PUBLIC_URL_PREFIX_ENV = "OPENAI_IMAGE_PUBLIC_URL_PREFIX"
-DEFAULT_PUBLIC_IMAGES_ROOT = Path("/app/client/public/images")
 DEFAULT_PUBLIC_OUTPUT_SUBDIR = "openai-image-mcp"
 DEFAULT_PUBLIC_URL_PREFIX = "/images"
 EMBED_MAX_BYTES_ENV = "OPENAI_IMAGE_EMBED_MAX_BYTES"
 DEFAULT_EMBED_MAX_BYTES = 8 * 1024 * 1024
+API_KEY_HEADER = "x-openai-api-key"
+BASE_URL_HEADER = "x-openai-base-url"
+IMAGE_MODEL_HEADER = "x-openai-image-model"
+TRANSPORT_ENV = "OPENAI_IMAGE_MCP_TRANSPORT"
+HOST_ENV = "OPENAI_IMAGE_MCP_HOST"
+PORT_ENV = "OPENAI_IMAGE_MCP_PORT"
+PATH_ENV = "OPENAI_IMAGE_MCP_PATH"
+ALLOWED_HOSTS_ENV = "OPENAI_IMAGE_MCP_ALLOWED_HOSTS"
 
 
 def _path(value: str | None) -> Path | None:
@@ -57,8 +68,9 @@ def _resolve_num_images(
     return _positive_int(num_images, name="num_images") or 1
 
 
-def _public_images_root() -> Path:
-    return Path(os.getenv(PUBLIC_IMAGES_ROOT_ENV, str(DEFAULT_PUBLIC_IMAGES_ROOT))).expanduser()
+def _public_images_root() -> Path | None:
+    value = os.getenv(PUBLIC_IMAGES_ROOT_ENV, "").strip()
+    return Path(value).expanduser() if value else None
 
 
 def _public_url_prefix() -> str:
@@ -74,7 +86,7 @@ def _default_output_dir(output_dir: str | None) -> Path | None:
         return explicit
 
     public_root = _public_images_root()
-    if public_root.exists():
+    if public_root:
         return public_root / DEFAULT_PUBLIC_OUTPUT_SUBDIR
     return None
 
@@ -84,8 +96,11 @@ def _public_url_for_file(file_path: str) -> str | None:
     if not path.is_absolute():
         path = Path.cwd() / path
 
+    public_root = _public_images_root()
+    if not public_root:
+        return None
     try:
-        relative = path.resolve().relative_to(_public_images_root().resolve())
+        relative = path.resolve().relative_to(public_root.resolve())
     except ValueError:
         return None
 
@@ -116,7 +131,7 @@ def _title_from_image(image: dict[str, Any], job: dict[str, Any]) -> str:
     return title[:80].rstrip() or "Generated Image"
 
 
-def _enrich_for_librechat(manifest: dict[str, Any]) -> dict[str, Any]:
+def _enrich_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
     markdown_blocks: list[str] = []
 
     for job in manifest.get("jobs", []):
@@ -180,16 +195,91 @@ def _to_tool_result(manifest: dict[str, Any]) -> CallToolResult:
     return CallToolResult(content=content, structuredContent=manifest)
 
 
-def _run_request(request: GenerationRequest) -> dict[str, Any]:
+def _request_env(ctx: Context | Any | None) -> dict[str, str]:
+    env = read_env()
+    headers = getattr(ctx, "headers", None)
+    if not headers:
+        request_context = getattr(ctx, "request_context", None)
+        request = getattr(request_context, "request", None)
+        headers = getattr(request, "headers", None)
+    if not headers:
+        return env
+    normalized_headers = {str(key).lower(): str(value).strip() for key, value in headers.items()}
+    if normalized_headers.get(API_KEY_HEADER):
+        env["api_key"] = normalized_headers[API_KEY_HEADER]
+    if normalized_headers.get(BASE_URL_HEADER):
+        env["base_url"] = normalized_headers[BASE_URL_HEADER]
+    if normalized_headers.get(IMAGE_MODEL_HEADER):
+        env["image_model"] = normalized_headers[IMAGE_MODEL_HEADER]
+    if os.getenv("OPENAI_IMAGE_ALLOW_INSECURE_BASE_URL", "").strip().lower() != "true":
+        _validate_public_https_base_url(env["base_url"])
+    return env
+
+
+def _validate_public_https_base_url(value: str) -> None:
+    parsed = urlparse(value)
+    if parsed.scheme != "https" or not parsed.hostname:
+        raise RuntimeError("OPENAI_BASE_URL must be a public HTTPS URL.")
+    host = parsed.hostname.strip().lower()
+    if host == "localhost" or host.endswith(".local"):
+        raise RuntimeError("OPENAI_BASE_URL must be a public HTTPS URL.")
+    try:
+        literal_ip = ipaddress.ip_address(host)
+    except ValueError:
+        literal_ip = None
+    if literal_ip is not None and not literal_ip.is_global:
+        raise RuntimeError("OPENAI_BASE_URL must be a public HTTPS URL.")
+    if literal_ip is None:
+        try:
+            addresses = {
+                ipaddress.ip_address(item[4][0])
+                for item in socket.getaddrinfo(host, parsed.port or 443, type=socket.SOCK_STREAM)
+            }
+        except OSError as exc:
+            raise RuntimeError("OPENAI_BASE_URL must resolve to a public HTTPS host.") from exc
+        if any(not address.is_global for address in addresses):
+            raise RuntimeError("OPENAI_BASE_URL must be a public HTTPS URL.")
+
+
+def _reject_path_override(value: str | None, *, name: str) -> None:
+    if value and os.getenv(TRANSPORT_ENV, "stdio").strip().lower() in {"http", "streamable-http"}:
+        raise RuntimeError(f"{name} is not supported in the HTTP sidecar deployment.")
+
+
+def _streamable_http_settings() -> Any:
+    host = os.getenv(HOST_ENV, "127.0.0.1").strip() or "127.0.0.1"
+    raw_extra_hosts = os.getenv(ALLOWED_HOSTS_ENV, "")
+    extra_hosts = [item.strip().lower() for item in raw_extra_hosts.split(",") if item.strip()]
+    allowed_hosts = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
+    allowed_hosts.extend(item if ":" in item else f"{item}:*" for item in extra_hosts)
+    if host not in {"0.0.0.0", "::"}:
+        allowed_hosts.append(f"{host}:*")
+    path = os.getenv(PATH_ENV, "/mcp").strip() or "/mcp"
+    if not path.startswith("/"):
+        raise RuntimeError(f"{PATH_ENV} must start with '/'.")
+    mcp.settings.host = host
+    mcp.settings.port = int(os.getenv(PORT_ENV, "8000"))
+    mcp.settings.streamable_http_path = path
+    mcp.settings.json_response = True
+    mcp.settings.transport_security = TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=list(dict.fromkeys(allowed_hosts)),
+        allowed_origins=["http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*"],
+    )
+    return mcp.settings
+
+
+def _run_request(request: GenerationRequest, ctx: Context | Any | None = None) -> dict[str, Any]:
     # MCP stdio reserves stdout for JSON-RPC frames. The CLI workflow prints
     # human progress lines, so route them to stderr when called as a tool.
     with redirect_stdout(sys.stderr):
-        return _enrich_for_librechat(run_generation_request(request))
+        return _enrich_manifest(run_generation_request_with_env(request, env=_request_env(ctx)))
 
 
 @mcp.tool()
 def list_prompt_styles(style_dir: str | None = None) -> dict[str, Any]:
     """List bundled and optional custom prompt styles."""
+    _reject_path_override(style_dir, name="style_dir")
     styles = load_styles(_path(style_dir))
     return {
         "styles": [
@@ -219,8 +309,10 @@ def plan_image_generation(
     category: str = "misc",
     filename_prefix: str | None = None,
     style_dir: str | None = None,
+    ctx: Context | None = None,
 ) -> CallToolResult:
     """Resolve the payload and manifest shape for one prompt without calling the image API."""
+    _reject_path_override(style_dir, name="style_dir")
     return _to_tool_result(
         _run_request(
             GenerationRequest(
@@ -237,7 +329,8 @@ def plan_image_generation(
                 short_edge=short_edge,
                 quality=quality,
                 background=background,
-            )
+            ),
+            ctx,
         )
     )
 
@@ -265,6 +358,7 @@ def generate_image(
     max_retries: int = 5,
     retry_delay: float = 1.0,
     style_dir: str | None = None,
+    ctx: Context | None = None,
 ) -> CallToolResult:
     """Generate one or more image files from a single prompt.
 
@@ -272,6 +366,8 @@ def generate_image(
     same prompt. The aliases n, count, and image_count are also accepted and
     override num_images when provided.
     """
+    _reject_path_override(output_dir, name="output_dir")
+    _reject_path_override(style_dir, name="style_dir")
     return _to_tool_result(
         _run_request(
             GenerationRequest(
@@ -298,7 +394,8 @@ def generate_image(
                 quality=quality,
                 background=background,
                 flat_output=flat_output,
-            )
+            ),
+            ctx,
         )
     )
 
@@ -321,8 +418,12 @@ def generate_images_batch(
     retry_delay: float = 1.0,
     style_dir: str | None = None,
     dry_run: bool = False,
+    ctx: Context | None = None,
 ) -> CallToolResult:
     """Generate image files from a JSON batch definition."""
+    _reject_path_override(batch_path, name="batch_path")
+    _reject_path_override(output_dir, name="output_dir")
+    _reject_path_override(style_dir, name="style_dir")
     return _to_tool_result(
         _run_request(
             GenerationRequest(
@@ -342,13 +443,22 @@ def generate_images_batch(
                 quality=quality,
                 background=background,
                 flat_output=flat_output,
-            )
+            ),
+            ctx,
         )
     )
 
 
 def run_mcp() -> None:
-    mcp.run(transport="stdio")
+    transport = os.getenv(TRANSPORT_ENV, "stdio").strip().lower()
+    if transport == "stdio":
+        mcp.run(transport="stdio")
+        return
+    if transport in {"http", "streamable-http"}:
+        _streamable_http_settings()
+        mcp.run(transport="streamable-http")
+        return
+    raise RuntimeError("OPENAI_IMAGE_MCP_TRANSPORT must be stdio or streamable-http.")
 
 
 if __name__ == "__main__":

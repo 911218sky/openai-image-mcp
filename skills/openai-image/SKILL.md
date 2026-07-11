@@ -1,6 +1,6 @@
 ---
 name: openai-image
-description: Use when the user wants to generate, plan, batch, or inspect AI images through the OpenAI Image MCP plugin, especially from Codex, Claude Code, or IDE MCP clients. Also supports canvas-based image iteration with annotations.
+description: Use when the user wants to generate, plan, batch, or inspect AI images through the OpenAI Image MCP plugin over stdio or Streamable HTTP.
 ---
 
 # OpenAI Image Workflow
@@ -20,17 +20,6 @@ Use this skill when image generation should run through this plugin instead of h
 - `plan_image_generation`: resolve payload and manifest shape without calling the API.
 - `generate_image`: generate one prompt and return a manifest with saved PNG paths.
 - `generate_images_batch`: run a batch JSON file, optionally with `only`, `limit`, `workers`, or `dry_run`.
-
-## Canvas Integration
-
-This plugin also includes canvas-hand tools for infinite canvas workflows:
-- `add-picture`: place a generated image onto the canvas at the far right
-- `read-annotations`: read arrow annotations from the canvas for iterative editing
-- `look-at-picture`: view a canvas image for AI inspection
-- `look-at-marked-image`: view the annotated screenshot (image + arrows + instructions)
-- `count-shapes`: count shapes, images, and arrows on the canvas
-
-For canvas workflows, see the `canvas-hand` skill.
 
 ## Practical Defaults
 

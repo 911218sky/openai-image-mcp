@@ -9,7 +9,7 @@ A Codex plugin + MCP server + CLI for generating images through OpenAI-compatibl
 - **Dry-run planning** before spending API calls
 - **Structured manifests** with saved PNG paths
 - **OpenAI-compatible base URLs** for alternative providers
-- **Works as**: Codex plugin, stdio MCP server, or standalone CLI
+- **Works as**: Codex plugin, stdio or Streamable HTTP MCP server, or standalone CLI
 
 ## Quick Start
 
@@ -124,6 +124,20 @@ uv run openai-image --prompt "city skyline" --aspect-ratio 16:9 --long-edge 1920
 | `OPENAI_IMAGE_MODEL` | `gpt-image-2` | Model name |
 | `OPENAI_IMAGE_TRANSPORT` | `auto` | `auto`, `sdk`, or `http` |
 | `OPENAI_TIMEOUT_SECONDS` | `1200` | Request timeout |
+| `OPENAI_IMAGE_ALLOW_INSECURE_BASE_URL` | `false` | Explicitly allow internal or plain-HTTP provider URLs |
+| `OPENAI_IMAGE_MCP_TRANSPORT` | `stdio` | `stdio` or `streamable-http` |
+| `OPENAI_IMAGE_MCP_HOST` | `127.0.0.1` | Streamable HTTP bind host |
+| `OPENAI_IMAGE_MCP_PORT` | `8000` | Streamable HTTP port |
+| `OPENAI_IMAGE_MCP_PATH` | `/mcp` | Streamable HTTP path |
+| `OPENAI_IMAGE_MCP_ALLOWED_HOSTS` | empty | Comma-separated allowed hostnames |
+| `OPENAI_IMAGE_PUBLIC_IMAGES_ROOT` | empty | Optional public image root for URL enrichment |
+| `OPENAI_IMAGE_PUBLIC_URL_PREFIX` | `/images` | URL prefix for public image files |
+| `OPENAI_IMAGE_EMBED_MAX_BYTES` | `8388608` | Maximum inline image size |
+
+For a containerized client, set `OPENAI_IMAGE_MCP_ALLOWED_HOSTS` to the client-visible
+hostname and port, for example `image-sidecar:8000`. Set
+`OPENAI_IMAGE_ALLOW_INSECURE_BASE_URL=true` only when the provider is an explicitly
+trusted internal HTTP endpoint.
 
 ## Development
 

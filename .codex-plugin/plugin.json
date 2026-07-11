@@ -1,7 +1,7 @@
 {
   "name": "openai-image",
-  "version": "0.3.0",
-  "description": "Generate OpenAI-compatible images with canvas integration. Supports prompt styles, batch jobs, canvas-based annotation workflows, and iterative image editing.",
+  "version": "0.3.1",
+  "description": "Generate OpenAI-compatible images through stdio or Streamable HTTP MCP transports.",
   "author": {
     "name": "911218sky"
   },
@@ -11,33 +11,27 @@
     "mcp",
     "openai",
     "image-generation",
-    "canvas",
-    "tldraw",
-    "annotation",
-    "typescript"
+    "streamable-http"
   ],
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
   "interface": {
-    "displayName": "OpenAI Image + Canvas",
-    "shortDescription": "Generate and iterate on AI images with infinite canvas support.",
-    "longDescription": "OpenAI Image adds a reusable image-generation workflow for Codex, Claude Code, and IDE MCP clients. Now includes canvas-hand integration for infinite canvas workflows: generate images, place them on canvas, annotate with arrows, and iterate based on annotations. Fully TypeScript-based unified MCP server.",
+    "displayName": "OpenAI Image MCP",
+    "shortDescription": "Generate images through stdio or Streamable HTTP MCP.",
+    "longDescription": "OpenAI Image provides image generation through stdio or Streamable HTTP MCP transports, with prompt styles, batch jobs, dry-run planning, and OpenAI-compatible providers.",
     "developerName": "911218sky",
     "category": "Productivity",
     "capabilities": [
       "MCP image generation",
-      "10 bundled prompt styles",
+      "Prompt styles",
       "Batch image jobs",
       "Dry-run payload planning",
       "OpenAI-compatible base URLs",
-      "Infinite canvas (tldraw)",
-      "Annotation-driven editing",
-      "TypeScript implementation"
+      "Streamable HTTP transport"
     ],
     "defaultPrompt": [
       "Generate a polished product mockup image from this prompt.",
-      "Open my canvas and place an image on it.",
-      "Read my canvas annotations and redraw the image."
+      "Run an image generation request through the MCP server."
     ]
   }
 }

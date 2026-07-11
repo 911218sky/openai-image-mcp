@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "openai-image-mcp": {
-      "command": "bash",
-      "args": ["./scripts/start-mcp.sh"],
+      "command": "uv",
+      "args": ["run", "openai-image-mcp"],
       "cwd": ".",
       "env": {
         "OPENAI_BASE_URL": "https://api.openai.com/v1",

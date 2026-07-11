@@ -133,10 +133,18 @@ def run_generation_request(request: GenerationRequest) -> dict[str, Any]:
     return run_generation(args_from_request(request))
 
 
-def run_generation(args: Any) -> dict[str, Any]:
-    env = read_env()
+def run_generation_request_with_env(
+    request: GenerationRequest,
+    *,
+    env: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    return run_generation(args_from_request(request), env=env)
+
+
+def run_generation(args: Any, *, env: dict[str, str] | None = None) -> dict[str, Any]:
+    resolved_env = env or read_env()
     timeout_seconds = resolve_timeout_seconds(
-        str(args.timeout) if args.timeout is not None else env.get("timeout")
+        str(args.timeout) if args.timeout is not None else resolved_env.get("timeout")
     )
     resolved_size = resolve_size_argument(args)
     jobs, source = collect_jobs(args)
@@ -149,7 +157,7 @@ def run_generation(args: Any) -> dict[str, Any]:
         jobs=jobs,
         source=source,
         output_dir=args.output_dir,
-        env=env,
+        env=resolved_env,
         style_name=args.style,
         style_dir=args.style_dir,
         options=GenerationOptions(
