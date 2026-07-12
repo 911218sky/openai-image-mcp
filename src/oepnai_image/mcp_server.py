@@ -9,9 +9,10 @@ from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
-from mcp.types import CallToolResult, ImageContent, TextContent
+from mcp.types import CallToolResult, ContentBlock, ImageContent, TextContent
 
 from .cli import format_style_listing, load_styles
+from .config import load_provider_registry
 from .workflow import GenerationRequest, run_generation_request
 
 
@@ -159,7 +160,7 @@ def _image_content_for_file(file_path: str) -> ImageContent | None:
 
 
 def _to_tool_result(manifest: dict[str, Any]) -> CallToolResult:
-    content: list[TextContent | ImageContent] = []
+    content: list[ContentBlock] = []
     text = str(manifest.get("display_markdown") or manifest.get("text") or "").strip()
     if text:
         content.append(TextContent(type="text", text=text))
@@ -206,6 +207,35 @@ def list_prompt_styles(style_dir: str | None = None) -> dict[str, Any]:
 
 
 @mcp.tool()
+def list_image_providers() -> dict[str, Any]:
+    """List configured provider routing metadata without exposing credentials."""
+    registry = load_provider_registry(environment=os.environ)
+    providers = [
+        {
+            "id": provider.id,
+            "protocol": provider.protocol,
+            "default_model": provider.default_model,
+            "targets": [
+                {
+                    "id": target.id,
+                    "base_url": target.base_url,
+                    "api_key_env": target.api_key_env,
+                    "priority": target.priority,
+                    "enabled": target.enabled,
+                }
+                for target in sorted(provider.targets, key=lambda item: (item.priority, item.id))
+            ],
+            "enabled": provider.enabled,
+        }
+        for provider in sorted(registry.providers, key=lambda item: item.id)
+    ]
+    return {
+        "default_provider": registry.default_provider,
+        "providers": providers,
+    }
+
+
+@mcp.tool()
 def plan_image_generation(
     prompt: str,
     style: str | None = None,
@@ -219,6 +249,9 @@ def plan_image_generation(
     category: str = "misc",
     filename_prefix: str | None = None,
     style_dir: str | None = None,
+    provider: str | None = None,
+    target: str | None = None,
+    strict_size: bool = False,
 ) -> CallToolResult:
     """Resolve the payload and manifest shape for one prompt without calling the image API."""
     return _to_tool_result(
@@ -228,6 +261,8 @@ def plan_image_generation(
                 category=category,
                 filename_prefix=filename_prefix,
                 model=model,
+                provider=provider,
+                target=target,
                 style=style,
                 style_dir=_path(style_dir),
                 dry_run=True,
@@ -237,6 +272,7 @@ def plan_image_generation(
                 short_edge=short_edge,
                 quality=quality,
                 background=background,
+                strict_size=strict_size,
             )
         )
     )
@@ -265,6 +301,9 @@ def generate_image(
     max_retries: int = 5,
     retry_delay: float = 1.0,
     style_dir: str | None = None,
+    provider: str | None = None,
+    target: str | None = None,
+    strict_size: bool = False,
 ) -> CallToolResult:
     """Generate one or more image files from a single prompt.
 
@@ -280,6 +319,8 @@ def generate_image(
                 category=category,
                 filename_prefix=filename_prefix,
                 model=model,
+                provider=provider,
+                target=target,
                 style=style,
                 style_dir=_path(style_dir),
                 num_images=_resolve_num_images(
@@ -297,6 +338,7 @@ def generate_image(
                 short_edge=short_edge,
                 quality=quality,
                 background=background,
+                strict_size=strict_size,
                 flat_output=flat_output,
             )
         )
@@ -321,6 +363,9 @@ def generate_images_batch(
     retry_delay: float = 1.0,
     style_dir: str | None = None,
     dry_run: bool = False,
+    provider: str | None = None,
+    target: str | None = None,
+    strict_size: bool = False,
 ) -> CallToolResult:
     """Generate image files from a JSON batch definition."""
     return _to_tool_result(
@@ -329,6 +374,8 @@ def generate_images_batch(
                 batch=_path(batch_path),
                 output_dir=_default_output_dir(output_dir),
                 model=model,
+                provider=provider,
+                target=target,
                 style=style,
                 style_dir=_path(style_dir),
                 limit=limit,
@@ -341,6 +388,7 @@ def generate_images_batch(
                 size=size,
                 quality=quality,
                 background=background,
+                strict_size=strict_size,
                 flat_output=flat_output,
             )
         )

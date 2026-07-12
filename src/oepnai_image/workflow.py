@@ -38,6 +38,8 @@ class GenerationRequest:
     category: str = "misc"
     filename_prefix: str | None = None
     model: str | None = None
+    provider: str | None = None
+    target: str | None = None
     style: str | None = None
     style_dir: Path | None = None
     num_images: int = 1
@@ -58,6 +60,7 @@ class GenerationRequest:
     quality: str | None = None
     background: str | None = None
     flat_output: bool = False
+    strict_size: bool = False
 
 
 def request_from_args(argv: list[str] | None = None) -> GenerationRequest:
@@ -71,6 +74,8 @@ def request_from_args(argv: list[str] | None = None) -> GenerationRequest:
         category=args.category,
         filename_prefix=args.filename_prefix,
         model=args.model,
+        provider=args.provider,
+        target=args.target,
         style=args.style,
         style_dir=args.style_dir,
         num_images=args.num_images,
@@ -91,6 +96,7 @@ def request_from_args(argv: list[str] | None = None) -> GenerationRequest:
         quality=args.quality,
         background=args.background,
         flat_output=args.flat_output,
+        strict_size=args.strict_size,
     )
 
 
@@ -103,6 +109,8 @@ def args_from_request(request: GenerationRequest) -> Any:
         category=request.category,
         filename_prefix=request.filename_prefix,
         model=request.model,
+        provider=request.provider,
+        target=request.target,
         style=request.style,
         style_dir=request.style_dir,
         list_styles=False,
@@ -124,6 +132,7 @@ def args_from_request(request: GenerationRequest) -> Any:
         quality=request.quality,
         background=request.background,
         flat_output=request.flat_output,
+        strict_size=request.strict_size,
     )
     validate_main_args(args)
     return args
@@ -162,6 +171,9 @@ def run_generation(args: Any) -> dict[str, Any]:
             retry_delay_seconds=args.retry_delay,
             timeout_seconds=timeout_seconds,
             dry_run=args.dry_run,
+            provider_override=args.provider,
+            target_override=args.target,
+            strict_size=args.strict_size,
         ),
         workers=args.workers,
     )

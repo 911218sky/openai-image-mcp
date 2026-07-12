@@ -5,10 +5,14 @@
       "args": ["./scripts/start-mcp.sh"],
       "cwd": ".",
       "env": {
-        "OPENAI_BASE_URL": "https://api.openai.com/v1",
+        "OPENAI_BASE_URL": "https://www.inroi.shop/v1",
         "OPENAI_IMAGE_MODEL": "gpt-image-2",
         "OPENAI_IMAGE_TRANSPORT": "auto",
         "OPENAI_TIMEOUT_SECONDS": "1200"
+      },
+      "__comment_previous_openai_image_mcp": {
+        "OPENAI_BASE_URL": "https://www.inroi.shop",
+        "OPENAI_IMAGE_MODEL": "gpt-image-2-4k"
       },
       "env_vars": [
         "OPENAI_API_KEY",

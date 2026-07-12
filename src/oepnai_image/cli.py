@@ -10,14 +10,28 @@ import sys
 import urllib.request
 from io import BytesIO
 from dataclasses import dataclass
-from importlib import resources
+from importlib import import_module, resources
 from pathlib import Path
-from typing import Any
+from typing import Any, assert_never
 
 import httpx
 from dotenv import find_dotenv, load_dotenv
 from openai import OpenAI
 from PIL import Image
+
+from .capabilities import build_size_metadata, enforce_size_match, resolve_requested_size
+from .config import load_provider_registry, resolve_provider
+from .providers import (
+    BearerAuth,
+    GeminiNativeProvider,
+    HttpRequest,
+    HttpResponse,
+    OpenAICompatibleProvider,
+    ProviderHttpConfig,
+    ProviderIdentity,
+    ProviderProtocol,
+    HeaderAuth,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -134,36 +148,15 @@ def build_size_from_ratio(
 
 
 def resolve_size_argument(args: argparse.Namespace) -> str | None:
-    explicit_sizes = [value for value in [args.size, args.resolution] if value]
-    if explicit_sizes and args.aspect_ratio:
-        raise RuntimeError("Use either --size/--resolution or --aspect-ratio, not both.")
-    if len(explicit_sizes) > 1 and args.size != args.resolution:
-        raise RuntimeError("--size and --resolution both set different values.")
-    if args.width is not None or args.height is not None:
-        if explicit_sizes or args.aspect_ratio:
-            raise RuntimeError("--width/--height cannot be combined with --size, --resolution, or --aspect-ratio.")
-        if args.width is None or args.height is None:
-            raise RuntimeError("Use --width and --height together.")
-        if args.width < 1 or args.height < 1:
-            raise RuntimeError("--width and --height must be at least 1.")
-        validate_size_dimensions(args.width, args.height)
-        return f"{args.width}x{args.height}"
-    if explicit_sizes:
-        width, height = parse_resolution(explicit_sizes[0])
-        return f"{width}x{height}"
-    if args.aspect_ratio:
-        if args.long_edge is not None and args.long_edge < 1:
-            raise RuntimeError("--long-edge must be at least 1.")
-        if args.short_edge is not None and args.short_edge < 1:
-            raise RuntimeError("--short-edge must be at least 1.")
-        return build_size_from_ratio(
-            args.aspect_ratio,
-            long_edge=args.long_edge,
-            short_edge=args.short_edge,
-        )
-    if args.long_edge is not None or args.short_edge is not None:
-        raise RuntimeError("--long-edge or --short-edge requires --aspect-ratio.")
-    return None
+    return resolve_requested_size(
+        args.size,
+        resolution=args.resolution,
+        aspect_ratio=args.aspect_ratio,
+        width=args.width,
+        height=args.height,
+        long_edge=args.long_edge,
+        short_edge=args.short_edge,
+    )
 
 
 @dataclass
@@ -178,6 +171,8 @@ class ImageJob:
     background: str | None = None
     n: int | None = None
     style: str | None = None
+    provider: str | None = None
+    target: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], defaults: dict[str, Any]) -> "ImageJob":
@@ -197,6 +192,8 @@ class ImageJob:
             background=merged.get("background"),
             n=validate_num_images(merged.get("n", 1), source=f"Batch job '{slug}' field 'n'"),
             style=merged.get("style"),
+            provider=merged.get("provider"),
+            target=merged.get("target"),
         )
 
 
@@ -220,6 +217,9 @@ class GenerationOptions:
     retry_delay_seconds: float
     timeout_seconds: float
     dry_run: bool
+    provider_override: str | None = None
+    target_override: str | None = None
+    strict_size: bool = False
 
 
 @dataclass(frozen=True)
@@ -230,13 +230,33 @@ class ResolvedJobConfig:
     num_images: int
     size: str | None
     quality: str | None
+    provider_id: str
+    target_id: str
+    protocol: str
+    base_url: str
+    api_key_env: str
+
+
+class ImageGenerationError(RuntimeError):
+    def __init__(self, message: str, *, status_code: int) -> None:
+        self.status_code = status_code
+        super().__init__(message)
 
 
 def make_runtime_error(message: str, *, status_code: int | None = None) -> RuntimeError:
-    error = RuntimeError(message)
-    if status_code is not None:
-        error.status_code = status_code  # type: ignore[attr-defined]
-    return error
+    if status_code is None:
+        return RuntimeError(message)
+    return ImageGenerationError(message, status_code=status_code)
+
+
+def provider_auth_for_protocol(protocol: ProviderProtocol) -> BearerAuth | HeaderAuth:
+    match protocol:
+        case ProviderProtocol.GEMINI_NATIVE:
+            return HeaderAuth(header_name="x-goog-api-key")
+        case ProviderProtocol.OPENAI_IMAGES:
+            return BearerAuth()
+        case unreachable:
+            assert_never(unreachable)
 
 
 def validate_num_images(value: Any, *, source: str) -> int:
@@ -500,6 +520,31 @@ class HttpImageClient:
         self.images = HttpImagesAdapter(env, timeout_seconds)
 
 
+class ProviderHttpTransport:
+    def send(self, request: HttpRequest) -> HttpResponse:
+        try:
+            response = httpx.post(
+                request.url,
+                headers=dict(request.headers),
+                json=dict(request.json_body),
+                timeout=request.timeout_seconds,
+            )
+        except httpx.TimeoutException as exc:
+            raise RuntimeError("Provider request timed out.") from exc
+        except httpx.HTTPError as exc:
+            raise RuntimeError("Provider HTTP request failed.") from exc
+        return HttpResponse(status_code=response.status_code, body=response.content)
+
+
+class ProviderImageClient:
+    def __init__(self, provider: OpenAICompatibleProvider | GeminiNativeProvider) -> None:
+        self.images = self
+        self.provider = provider
+
+    def generate(self, **payload: Any) -> Any:
+        return self.provider.generate(payload)
+
+
 def inspect_png_bytes(image_bytes: bytes) -> dict[str, Any]:
     with Image.open(BytesIO(image_bytes)) as image:
         original_size = image.size
@@ -511,7 +556,7 @@ def inspect_png_bytes(image_bytes: bytes) -> dict[str, Any]:
 
 
 def generate_with_retries(
-    client: OpenAI,
+    client: OpenAI | HttpImageClient | ProviderImageClient,
     payload: dict[str, Any],
     *,
     job_slug: str,
@@ -550,6 +595,8 @@ def make_prompt_jobs(
     category: str,
     filename_prefix: str | None,
     style: str | None,
+    provider: str | None = None,
+    target: str | None = None,
 ) -> list[ImageJob]:
     jobs: list[ImageJob] = []
     normalized_prefix = slugify(filename_prefix) if filename_prefix else None
@@ -573,6 +620,8 @@ def make_prompt_jobs(
                 background=background,
                 n=num_images,
                 style=style,
+                provider=provider,
+                target=target,
             )
         )
     return jobs
@@ -614,6 +663,8 @@ def collect_jobs(args: argparse.Namespace) -> tuple[list[ImageJob], str]:
                 category=args.category,
                 filename_prefix=args.filename_prefix,
                 style=args.style,
+                provider=args.provider,
+                target=args.target,
             )
         )
 
@@ -665,14 +716,33 @@ def resolve_job_config(
         else job.quality or style_defaults.get("quality")
     )
     if size:
-        parse_resolution(str(size))
+        size = resolve_requested_size(str(size))
+    resolver_environment = dict(os.environ)
+    legacy_environment = {
+        "OPENAI_API_KEY": env.get("api_key", ""),
+        "OPENAI_BASE_URL": env.get("base_url", ""),
+        "OPENAI_IMAGE_MODEL": env.get("image_model", ""),
+    }
+    provider = resolve_provider(
+        runtime_provider=options.provider_override,
+        job_provider=job.provider,
+        target_id=options.target_override or job.target,
+        environment=resolver_environment,
+        legacy_env=legacy_environment,
+        require_api_key=not options.dry_run,
+    )
     return ResolvedJobConfig(
         category=category,
-        model=options.model_override or job.model or style_defaults.get("model") or env["image_model"],
+        model=options.model_override or job.model or style_defaults.get("model") or provider.default_model,
         background=background,
         num_images=job.n if job.n is not None else 1,
         size=size,
         quality=quality,
+        provider_id=provider.provider_id,
+        target_id=provider.target_id,
+        protocol=provider.protocol,
+        base_url=provider.base_url,
+        api_key_env=provider.api_key_env,
     )
 
 
@@ -694,6 +764,91 @@ def build_generation_payload(
     if config.quality:
         payload["quality"] = config.quality
     return payload
+
+
+def _provider_payload(payload: dict[str, Any], protocol: str) -> dict[str, Any]:
+    if protocol != "gemini-native":
+        return payload
+    generation_config = {
+        key: payload[key]
+        for key in ("size", "quality", "background")
+        if key in payload
+    }
+    generation_config["responseModalities"] = ["IMAGE"]
+    result: dict[str, Any] = {
+        "contents": [{"parts": [{"text": str(payload["prompt"])}]}],
+    }
+    if generation_config:
+        result["generationConfig"] = generation_config
+    return result
+
+
+def _provider_targets(config: ResolvedJobConfig) -> list[tuple[str, str, str, str]]:
+    registry = load_provider_registry(environment=os.environ)
+    provider = next((item for item in registry.providers if item.id == config.provider_id), None)
+    if provider is None:
+        return [(config.target_id, config.base_url, config.api_key_env, config.protocol)]
+    targets = sorted(
+        (target for target in provider.targets if target.enabled),
+        key=lambda target: (target.priority, target.id),
+    )
+    selected_index = next(
+        (index for index, target in enumerate(targets) if target.id == config.target_id),
+        0,
+    )
+    ordered = targets[selected_index:] + targets[:selected_index]
+    return [(target.id, target.base_url, target.api_key_env, provider.protocol) for target in ordered]
+
+
+def generate_with_provider_failover(
+    payload: dict[str, Any],
+    config: ResolvedJobConfig,
+    *,
+    job_slug: str,
+    max_retries: int,
+    retry_delay_seconds: float,
+    timeout_seconds: float,
+) -> Any:
+    last_error: RuntimeError | None = None
+    for target_id, base_url, api_key_env, protocol in _provider_targets(config):
+        credential = os.getenv(api_key_env, "").strip()
+        if not credential:
+            last_error = RuntimeError("Configured provider target credential is unavailable.")
+            continue
+        provider_protocol = ProviderProtocol(protocol)
+        provider_config = ProviderHttpConfig(
+            identity=ProviderIdentity(config.provider_id, target_id),
+            protocol=provider_protocol,
+            base_url=base_url,
+            path=(
+                f"/models/{config.model}:generateContent"
+                if provider_protocol is ProviderProtocol.GEMINI_NATIVE
+                else "/images/generations"
+            ),
+            auth=provider_auth_for_protocol(provider_protocol),
+            timeout_seconds=timeout_seconds,
+        )
+        adapter: OpenAICompatibleProvider | GeminiNativeProvider
+        if provider_protocol is ProviderProtocol.GEMINI_NATIVE:
+            adapter = GeminiNativeProvider(provider_config, ProviderHttpTransport(), credential)
+        else:
+            adapter = OpenAICompatibleProvider(provider_config, ProviderHttpTransport(), credential)
+        try:
+            return generate_with_retries(
+                ProviderImageClient(adapter),
+                _provider_payload(payload, protocol),
+                job_slug=job_slug,
+                max_retries=max_retries,
+                retry_delay_seconds=retry_delay_seconds,
+            )
+        except RuntimeError as exc:
+            last_error = exc
+            cause = exc.__cause__
+            if getattr(cause, "status_code", None) in NON_RETRYABLE_STATUS_CODES:
+                raise
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("No configured provider target is available.")
 
 
 def generate_job(
@@ -723,13 +878,24 @@ def generate_job(
             "slug": job.slug,
             "category": config.category,
             "style": style.slug if style else None,
+            "provider": config.provider_id,
+            "target": config.target_id,
             "base_prompt": job.prompt,
             "payload": payload,
             "files": [],
             "dry_run": True,
         }
 
-    if should_use_http_transport(env):
+    if config.target_id != "legacy":
+        response = generate_with_provider_failover(
+            payload,
+            config,
+            job_slug=job.slug,
+            max_retries=options.max_retries,
+            retry_delay_seconds=options.retry_delay_seconds,
+            timeout_seconds=options.timeout_seconds,
+        )
+    elif should_use_http_transport(env):
         response = generate_with_retries(
             HttpImageClient(env, options.timeout_seconds),
             payload,
@@ -760,6 +926,16 @@ def generate_job(
         print(f"[save] {job.slug} image {index}/{len(response.data)} -> {file_path}", flush=True)
         image_bytes = response_item_to_png_bytes(item, options.timeout_seconds)
         image_metadata = inspect_png_bytes(image_bytes)
+        requested_size = config.size or image_metadata["original_size"]
+        size_metadata = build_size_metadata(
+            requested_size=requested_size,
+            actual_size=image_metadata["original_size"],
+            original_size=image_metadata["original_size"],
+            final_size=image_metadata["final_size"],
+            resized=image_metadata["resized"],
+        ).as_manifest_fields()
+        if options.strict_size:
+            enforce_size_match(requested_size, image_metadata["original_size"])
         file_path.write_bytes(image_bytes)
         print(
             f"[saved] {job.slug} image {index}/{len(response.data)} "
@@ -770,8 +946,7 @@ def generate_job(
         images.append(
             {
                 "file": format_path_for_manifest(file_path),
-                "requested_size": config.size,
-                **image_metadata,
+                **size_metadata,
             }
         )
 
@@ -779,6 +954,8 @@ def generate_job(
         "slug": job.slug,
         "category": config.category,
         "style": style.slug if style else None,
+        "provider": config.provider_id,
+        "target": config.target_id,
         "base_prompt": job.prompt,
         "payload": payload,
         "files": files,
@@ -829,6 +1006,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--model",
         default=None,
         help="Optional model override, for example gpt-image-2.",
+    )
+    parser.add_argument(
+        "--provider",
+        default=None,
+        help="Provider id override from the provider registry.",
+    )
+    parser.add_argument(
+        "--target",
+        default=None,
+        help="Provider target id override from the provider registry.",
     )
     parser.add_argument(
         "--style",
@@ -948,6 +1135,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Write images directly into the output directory without category subfolders.",
     )
+    parser.add_argument(
+        "--strict-size",
+        action="store_true",
+        help="Fail after decoding if the generated pixels do not match the requested size.",
+    )
     return parser.parse_args(argv)
 
 
@@ -960,9 +1152,8 @@ def main(argv: list[str] | None = None) -> int:
         print(format_style_listing(styles))
         return 0
 
-    from .workflow import run_generation
-
-    manifest = run_generation(args)
+    workflow = import_module(".workflow", package=__package__)
+    manifest = workflow.run_generation(args)
 
     if args.dry_run:
         print(json.dumps(manifest, ensure_ascii=False, indent=2))
