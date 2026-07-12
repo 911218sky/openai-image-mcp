@@ -125,6 +125,33 @@ uv run openai-image --prompt "city skyline" --aspect-ratio 16:9 --long-edge 1920
 | `OPENAI_IMAGE_TRANSPORT` | `auto` | `auto`, `sdk`, or `http` |
 | `OPENAI_TIMEOUT_SECONDS` | `1200` | Request timeout |
 
+### Provider Registry
+
+For multiple providers or targets, copy the checked-in example and point the
+CLI/MCP process at the local copy:
+
+```bash
+mkdir -p ~/.config/openai-image-mcp
+cp providers.toml.example ~/.config/openai-image-mcp/providers.toml
+export OPENAI_IMAGE_CONFIG="$HOME/.config/openai-image-mcp/providers.toml"
+export GEMINI_API_KEY="your_gemini_key"
+```
+
+The example includes a Gemini-native target for
+`gemini-3.1-flash-image` and the official OpenAI image target. Select a target
+explicitly when generating:
+
+```bash
+uv run openai-image \
+  --prompt "a clean academic ear canal cross-section" \
+  --provider gemini \
+  --target inroi \
+  --model gemini-3.1-flash-image
+```
+
+Use `.env.example` as the environment variable reference. Never commit a
+local `.env`, provider registry containing secrets, or generated images.
+
 ## Development
 
 ```bash

@@ -1,0 +1,24 @@
+# Copy this file to ~/.config/openai-image-mcp/providers.toml.
+# API keys are read from environment variables and must not be stored here.
+
+schema_version = 1
+default_provider = "gemini"
+
+[providers.gemini]
+protocol = "gemini-native"
+default_model = "gemini-3.1-flash-image"
+
+[providers.gemini.targets.inroi]
+# Replace this with another Gemini-compatible gateway when needed.
+base_url = "https://www.inroi.shop/v1beta"
+api_key_env = "GEMINI_API_KEY"
+priority = 1
+
+[providers.openai]
+protocol = "openai-images"
+default_model = "gpt-image-2"
+
+[providers.openai.targets.official]
+base_url = "https://api.openai.com/v1"
+api_key_env = "OPENAI_API_KEY"
+priority = 1
