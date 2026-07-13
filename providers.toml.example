@@ -22,3 +22,12 @@ default_model = "gpt-image-2"
 base_url = "https://api.openai.com/v1"
 api_key_env = "OPENAI_API_KEY"
 priority = 1
+
+[providers.openai_chat]
+protocol = "openai-chat-images"
+default_model = "gpt-image-2"
+
+[providers.openai_chat.targets.gateway]
+base_url = "https://images.example.com/v1"
+api_key_env = "OPENAI_CHAT_IMAGE_API_KEY"
+priority = 1

@@ -14,6 +14,7 @@ from oepnai_image.cli import (
     generate_with_provider_failover,
     image_generation_endpoint,
     provider_auth_for_protocol,
+    _provider_payload,
     response_item_to_png_bytes,
 )
 from oepnai_image.providers import (
@@ -290,6 +291,83 @@ def test_cli_gemini_routing_uses_google_api_key_header() -> None:
 
     assert isinstance(auth, HeaderAuth)
     assert auth.header_name == "x-goog-api-key"
+
+
+def test_openai_chat_images_payload_uses_chat_messages() -> None:
+    # Given: the shared image-generation payload.
+    payload = {"model": "gpt-image-2", "prompt": "academic diagram", "quality": "high"}
+
+    # When: it is adapted for an OpenAI-compatible chat image endpoint.
+    result = _provider_payload(payload, "openai-chat-images")
+
+    # Then: only the model and chat messages are sent to the endpoint.
+    assert result == {
+        "model": "gpt-image-2",
+        "messages": [{"role": "user", "content": "academic diagram"}],
+    }
+
+
+def test_openai_chat_images_routes_and_normalizes_b64_response(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given: a chat-image provider returning the established data[].b64_json shape.
+    monkeypatch.setenv("CHAT_IMAGE_KEY", "offline-chat-key")
+    config_path = tmp_path / "providers.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "schema_version = 1",
+                'default_provider = "openai"',
+                "[providers.openai]",
+                'protocol = "openai-chat-images"',
+                'default_model = "gpt-image-2"',
+                "[providers.openai.targets.inroi]",
+                'base_url = "https://images.example.test/v1"',
+                'api_key_env = "CHAT_IMAGE_KEY"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OPENAI_IMAGE_CONFIG", str(config_path))
+    requests: list[HttpRequest] = []
+
+    def send(_transport: ProviderHttpTransport, request: HttpRequest) -> HttpResponse:
+        requests.append(request)
+        return http_response(200, {"data": [{"b64_json": PNG_B64}]})
+
+    monkeypatch.setattr(ProviderHttpTransport, "send", send)
+    config = ResolvedJobConfig(
+        category="misc",
+        model="gpt-image-2",
+        background="opaque",
+        num_images=1,
+        size="1536x864",
+        quality="high",
+        provider_id="openai",
+        target_id="inroi",
+        protocol="openai-chat-images",
+        base_url="https://images.example.test/v1",
+        api_key_env="CHAT_IMAGE_KEY",
+    )
+
+    # When: generation runs through provider routing.
+    result = generate_with_provider_failover(
+        {"model": "gpt-image-2", "prompt": "academic diagram", "quality": "high"},
+        config,
+        job_slug="chat-image",
+        max_retries=1,
+        retry_delay_seconds=0,
+        timeout_seconds=1,
+    )
+
+    # Then: the chat endpoint and payload are used and image data is normalized.
+    assert requests[0].url == "https://images.example.test/v1/chat/completions"
+    assert requests[0].json_body == {
+        "model": "gpt-image-2",
+        "messages": [{"role": "user", "content": "academic diagram"}],
+    }
+    assert result.data[0].b64_json == PNG_B64
 
 
 def test_provider_failover_moves_to_next_target_after_retryable_failure(

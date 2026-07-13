@@ -78,6 +78,20 @@ def test_load_provider_registry_uses_the_explicit_override_path(tmp_path) -> Non
     assert registry.providers[0].targets[0].base_url == "https://config.example/v1"
 
 
+def test_load_provider_registry_accepts_openai_chat_images_protocol(tmp_path) -> None:
+    # Given: an image provider exposed through an OpenAI-compatible chat endpoint.
+    path = write_config(
+        tmp_path,
+        provider_config().replace('protocol = "openai-images"', 'protocol = "openai-chat-images"'),
+    )
+
+    # When: the provider registry is loaded.
+    registry = load_provider_registry(path)
+
+    # Then: the chat-image protocol is preserved for routing.
+    assert registry.providers[0].protocol == "openai-chat-images"
+
+
 def test_load_provider_registry_uses_openai_image_config_override(monkeypatch, tmp_path) -> None:
     path = write_config(tmp_path, provider_config(provider_id="override"))
     monkeypatch.setenv("OPENAI_IMAGE_CONFIG", str(path))

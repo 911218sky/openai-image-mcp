@@ -149,6 +149,10 @@ uv run openai-image \
   --model gemini-3.1-flash-image
 ```
 
+For gateways that expose image models through an OpenAI-compatible
+`/chat/completions` endpoint, use `protocol = "openai-chat-images"`. The
+gateway response must provide image bytes in `data[].b64_json`.
+
 Use `.env.example` as the environment variable reference. Never commit a
 local `.env`, provider registry containing secrets, or generated images.
 

@@ -197,7 +197,7 @@ def _parse_provider(raw: dict[str, object]) -> ProviderConfig:
     _reject_unknown(raw, _PROVIDER_KEYS, "provider")
     provider_id = _required_id(raw, "id", "provider")
     protocol = _required_string(raw, "protocol", "provider")
-    if protocol not in {"openai-images", "gemini-native"}:
+    if protocol not in {"openai-images", "openai-chat-images", "gemini-native"}:
         raise ProviderConfigError("Unsupported provider protocol.")
     default_model = _required_string(raw, "default_model", "provider")
     targets = _parse_targets(raw.get("targets", {}))

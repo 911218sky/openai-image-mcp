@@ -14,6 +14,7 @@ JsonValue: TypeAlias = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
 @unique
 class ProviderProtocol(StrEnum):
     OPENAI_IMAGES = "openai-images"
+    OPENAI_CHAT_IMAGES = "openai-chat-images"
     GEMINI_NATIVE = "gemini-native"
 
 

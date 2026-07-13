@@ -253,7 +253,7 @@ def provider_auth_for_protocol(protocol: ProviderProtocol) -> BearerAuth | Heade
     match protocol:
         case ProviderProtocol.GEMINI_NATIVE:
             return HeaderAuth(header_name="x-goog-api-key")
-        case ProviderProtocol.OPENAI_IMAGES:
+        case ProviderProtocol.OPENAI_IMAGES | ProviderProtocol.OPENAI_CHAT_IMAGES:
             return BearerAuth()
         case unreachable:
             assert_never(unreachable)
@@ -767,6 +767,11 @@ def build_generation_payload(
 
 
 def _provider_payload(payload: dict[str, Any], protocol: str) -> dict[str, Any]:
+    if protocol == "openai-chat-images":
+        return {
+            "model": payload["model"],
+            "messages": [{"role": "user", "content": str(payload["prompt"])}],
+        }
     if protocol != "gemini-native":
         return payload
     generation_config = {
@@ -820,11 +825,11 @@ def generate_with_provider_failover(
             identity=ProviderIdentity(config.provider_id, target_id),
             protocol=provider_protocol,
             base_url=base_url,
-            path=(
-                f"/models/{config.model}:generateContent"
-                if provider_protocol is ProviderProtocol.GEMINI_NATIVE
-                else "/images/generations"
-            ),
+            path={
+                ProviderProtocol.OPENAI_IMAGES: "/images/generations",
+                ProviderProtocol.OPENAI_CHAT_IMAGES: "/chat/completions",
+                ProviderProtocol.GEMINI_NATIVE: f"/models/{config.model}:generateContent",
+            }[provider_protocol],
             auth=provider_auth_for_protocol(provider_protocol),
             timeout_seconds=timeout_seconds,
         )
